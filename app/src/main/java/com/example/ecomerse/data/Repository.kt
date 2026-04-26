@@ -3,6 +3,7 @@ package com.example.ecomerse.data
 import com.example.ecomerse.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import java.util.*
 
 object AppRepository {
@@ -35,6 +36,33 @@ object AppRepository {
     private val _activityLogs = MutableStateFlow<List<ActivityLog>>(emptyList())
     val activityLogs: StateFlow<List<ActivityLog>> = _activityLogs
 
+    fun manufactureProduct(name: String, description: String, price: Double, userId: String) {
+        val newProduct = Product(
+            id = (products.value.size + 1).toString(),
+            name = name,
+            description = description,
+            unitPrice = price
+        )
+        _products.update { it + newProduct }
+        logActivity(userId, "Manufactured new product: $name")
+    }
+
+    fun distributeStock(productId: String, distributorId: String, quantity: Int, userId: String) {
+        val currentInventory = _inventory.value.toMutableList()
+        val index = currentInventory.indexOfFirst { it.productId == productId && it.distributorId == distributorId }
+        
+        if (index != -1) {
+            val item = currentInventory[index]
+            currentInventory[index] = item.copy(quantity = item.quantity + quantity)
+            _inventory.value = currentInventory
+            logActivity(userId, "Distributed $quantity units of product $productId to $distributorId")
+        } else {
+            currentInventory.add(InventoryItem(productId, distributorId, quantity))
+            _inventory.value = currentInventory
+            logActivity(userId, "Distributed initial $quantity units of product $productId to $distributorId")
+        }
+    }
+
     fun recordSale(productId: String, distributorId: String, agentId: String, quantity: Int) {
         val currentInventory = _inventory.value.toMutableList()
         val index = currentInventory.indexOfFirst { it.productId == productId && it.distributorId == distributorId }
@@ -55,24 +83,22 @@ object AppRepository {
                 )
                 _sales.value = _sales.value + sale
                 logActivity(agentId, "Recorded sale: $quantity units of Product $productId")
+                
+                // Rewards logic placeholder
+                checkRewards(distributorId)
             }
         }
     }
 
-    fun updateStock(productId: String, distributorId: String, addedQuantity: Int, userId: String) {
-        val currentInventory = _inventory.value.toMutableList()
-        val index = currentInventory.indexOfFirst { it.productId == productId && it.distributorId == distributorId }
-        
-        if (index != -1) {
-            val item = currentInventory[index]
-            currentInventory[index] = item.copy(quantity = item.quantity + addedQuantity)
-            _inventory.value = currentInventory
-            logActivity(userId, "Restocked Product $productId: +$addedQuantity units at $distributorId")
-        } else {
-            currentInventory.add(InventoryItem(productId, distributorId, addedQuantity))
-            _inventory.value = currentInventory
-            logActivity(userId, "Added new Product $productId to $distributorId with $addedQuantity units")
+    private fun checkRewards(distributorId: String) {
+        val distSales = _sales.value.filter { it.distributorId == distributorId }
+        if (distSales.size % 10 == 0) {
+            logActivity("SYSTEM", "Distributor $distributorId reached a sales milestone! Reward unlocked.")
         }
+    }
+
+    fun updateStock(productId: String, distributorId: String, addedQuantity: Int, userId: String) {
+        distributeStock(productId, distributorId, addedQuantity, userId)
     }
 
     fun logActivity(userId: String, action: String) {
