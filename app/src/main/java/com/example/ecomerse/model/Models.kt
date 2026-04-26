@@ -1,6 +1,7 @@
 package com.example.ecomerse.model
 
 enum class UserRole {
+    CUSTOMER,
     DISTRIBUTOR,
     SALES_AGENT,
     STOCK_SUPERVISOR,

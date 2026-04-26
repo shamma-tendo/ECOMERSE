@@ -116,8 +116,21 @@ object SessionManager {
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser: StateFlow<User?> = _currentUser
 
+    private data class AuthAccount(
+        val email: String,
+        val password: String,
+        val user: User
+    )
+
+    private val authAccounts = mutableMapOf<String, AuthAccount>()
+
+    init {
+        seedDefaultAccounts()
+    }
+
     fun login(role: UserRole) {
         val user = when(role) {
+            UserRole.CUSTOMER -> User("cust_001", "Customer Demo", UserRole.CUSTOMER)
             UserRole.DISTRIBUTOR -> User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1")
             UserRole.SALES_AGENT -> User("agent_001", "Alice Smith", UserRole.SALES_AGENT, "dist1")
             UserRole.STOCK_SUPERVISOR -> User("sup_bob", "Bob Johnson", UserRole.STOCK_SUPERVISOR, "dist1")
@@ -127,10 +140,100 @@ object SessionManager {
         AppRepository.logActivity(user.id, "Session started: Logged in as ${role.name}")
     }
 
+    fun login(email: String, password: String): Boolean {
+        val normalizedEmail = email.trim().lowercase(Locale.ROOT)
+        val account = authAccounts[normalizedEmail] ?: return false
+        if (account.password != password) return false
+
+        _currentUser.value = account.user
+        AppRepository.logActivity(account.user.id, "Session started: Logged in with credentials")
+        return true
+    }
+
+    fun register(
+        name: String,
+        email: String,
+        password: String,
+        role: UserRole = UserRole.CUSTOMER,
+        distributorId: String? = null
+    ): Boolean {
+        val normalizedEmail = email.trim().lowercase(Locale.ROOT)
+        if (name.isBlank() || normalizedEmail.isBlank() || password.length < 4) return false
+        if (authAccounts.containsKey(normalizedEmail)) return false
+
+        val userId = buildUserId(role)
+        val user = User(
+            id = userId,
+            name = name.trim(),
+            role = role,
+            distributorId = distributorId
+        )
+
+        addAccount(normalizedEmail, password, user)
+        AppRepository.logActivity(userId, "Account created")
+        return true
+    }
+
+    fun demoCredentials(): List<Pair<String, String>> = listOf(
+        "customer@ecomerse.com" to "pass1234",
+        "distributor@ecomerse.com" to "pass1234",
+        "agent@ecomerse.com" to "pass1234",
+        "supervisor@ecomerse.com" to "pass1234",
+        "manager@ecomerse.com" to "pass1234"
+    )
+
     fun logout() {
         _currentUser.value?.let { 
             AppRepository.logActivity(it.id, "Session ended: Logged out")
         }
         _currentUser.value = null
+    }
+
+    private fun seedDefaultAccounts() {
+        addAccount(
+            email = "customer@ecomerse.com",
+            password = "pass1234",
+            user = User("cust_001", "Customer Demo", UserRole.CUSTOMER)
+        )
+        addAccount(
+            email = "distributor@ecomerse.com",
+            password = "pass1234",
+            user = User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1")
+        )
+        addAccount(
+            email = "agent@ecomerse.com",
+            password = "pass1234",
+            user = User("agent_001", "Alice Smith", UserRole.SALES_AGENT, "dist1")
+        )
+        addAccount(
+            email = "supervisor@ecomerse.com",
+            password = "pass1234",
+            user = User("sup_bob", "Bob Johnson", UserRole.STOCK_SUPERVISOR, "dist1")
+        )
+        addAccount(
+            email = "manager@ecomerse.com",
+            password = "pass1234",
+            user = User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER)
+        )
+    }
+
+    private fun addAccount(email: String, password: String, user: User) {
+        authAccounts[email.trim().lowercase(Locale.ROOT)] = AuthAccount(
+            email = email.trim().lowercase(Locale.ROOT),
+            password = password,
+            user = user
+        )
+    }
+
+    private fun buildUserId(role: UserRole): String {
+        val prefix = when (role) {
+            UserRole.CUSTOMER -> "cust"
+            UserRole.DISTRIBUTOR -> "dist"
+            UserRole.SALES_AGENT -> "agent"
+            UserRole.STOCK_SUPERVISOR -> "sup"
+            UserRole.COMPANY_MANAGER -> "mgr"
+        }
+        val count = authAccounts.values.count { it.user.role == role } + 1
+        return "${prefix}_${count.toString().padStart(3, '0')}"
     }
 }

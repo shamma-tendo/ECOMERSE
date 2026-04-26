@@ -93,6 +93,7 @@ fun MainContent(isDarkMode: Boolean, onToggleTheme: () -> Unit) {
                     LaunchedEffect(Unit) { currentScreen = ScreenState.LANDING }
 
                     when (user.role) {
+                        UserRole.CUSTOMER -> SalesAgentScreen()
                         UserRole.SALES_AGENT -> SalesAgentScreen()
                         UserRole.DISTRIBUTOR -> DistributorInventoryScreen()
                         UserRole.STOCK_SUPERVISOR -> DistributorInventoryScreen()
