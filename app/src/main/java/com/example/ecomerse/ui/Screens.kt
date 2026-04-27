@@ -1101,7 +1101,7 @@ fun DashboardScreen() {
                             Text("Real-time Revenue", style = MaterialTheme.typography.labelLarge)
                             val revenueFormatted = String.format(Locale.getDefault(), "%.2f", totalRevenue)
                             Text(
-                                text = "{'$'}$revenueFormatted",
+                                text = "${'$'}$revenueFormatted",
                                 style = MaterialTheme.typography.headlineLarge
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1146,7 +1146,7 @@ fun DashboardScreen() {
 }
 
 @Composable
-private fun RoleChatHost(
+fun RoleChatHost(
     modifier: Modifier = Modifier,
     chatViewModel: ChatViewModel,
     activeThreadId: String?,

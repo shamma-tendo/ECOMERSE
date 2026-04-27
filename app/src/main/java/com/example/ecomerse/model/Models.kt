@@ -12,8 +12,29 @@ data class User(
     val id: String,
     val name: String,
     val role: UserRole,
-    val distributorId: String? = null // For Distributors and Agents
+    val distributorId: String? = null,
+    val email: String = "",
+    val position: String = "Staff",
+    val status: EmployeeStatus = EmployeeStatus.ACTIVE
 )
+
+enum class EmployeeStatus {
+    ACTIVE, INACTIVE, SUSPENDED
+}
+
+data class LeaveRequest(
+    val id: String,
+    val employeeId: String,
+    val employeeName: String,
+    val startDate: String,
+    val endDate: String,
+    val reason: String,
+    val status: LeaveStatus = LeaveStatus.PENDING
+)
+
+enum class LeaveStatus {
+    PENDING, APPROVED, REJECTED
+}
 
 data class Product(
     val id: String,

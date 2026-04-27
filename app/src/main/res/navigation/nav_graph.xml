@@ -1,0 +1,23 @@
+<!-- res/navigation/nav_graph.xml -->
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/nav_dashboard">
+
+    <fragment android:id="@+id/nav_dashboard"
+        android:name="com.ecomerse.DashboardFragment"
+        android:label="Dashboard" />
+
+    <fragment android:id="@+id/nav_employees"
+        android:name="com.ecomerse.EmployeesFragment"
+        android:label="Employees" />
+
+    <fragment android:id="@+id/nav_leave"
+        android:name="com.ecomerse.LeaveFragment"
+        android:label="Leave Approvals" />
+
+    <fragment android:id="@+id/nav_announce"
+        android:name="com.ecomerse.AnnouncementsFragment"
+        android:label="Announcements" />
+
+</navigation>
