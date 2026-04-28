@@ -19,9 +19,8 @@ interface ChatRepository {
 
 class InMemoryChatRepository : ChatRepository {
     private val usersById = mutableMapOf(
+        "cust_001" to User("cust_001", "Customer Demo", UserRole.CUSTOMER),
         "dist_admin_1" to User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1"),
-        "agent_001" to User("agent_001", "Alice Smith", UserRole.SALES_AGENT, "dist1"),
-        "sup_bob" to User("sup_bob", "Bob Johnson", UserRole.STOCK_SUPERVISOR, "dist1"),
         "mgr_carol" to User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER)
     )
 
@@ -158,13 +157,14 @@ class InMemoryChatRepository : ChatRepository {
         if (first.role == UserRole.COMPANY_MANAGER || second.role == UserRole.COMPANY_MANAGER) return true
 
         val sameDistributor = !first.distributorId.isNullOrBlank() && first.distributorId == second.distributorId
-        if (!sameDistributor) return false
-
         return when {
-            first.role == UserRole.DISTRIBUTOR && second.role == UserRole.SALES_AGENT -> true
-            first.role == UserRole.SALES_AGENT && second.role == UserRole.DISTRIBUTOR -> true
-            first.role == UserRole.DISTRIBUTOR && second.role == UserRole.STOCK_SUPERVISOR -> true
-            first.role == UserRole.STOCK_SUPERVISOR && second.role == UserRole.DISTRIBUTOR -> true
+            // Customer can chat with distributor (e.g., request follow-up)
+            first.role == UserRole.CUSTOMER && second.role == UserRole.DISTRIBUTOR -> true
+            first.role == UserRole.DISTRIBUTOR && second.role == UserRole.CUSTOMER -> true
+            // Allow distributor peers in same network to coordinate
+            first.role == UserRole.DISTRIBUTOR && second.role == UserRole.DISTRIBUTOR -> true
+            // Keep same-distributor guard for non-manager internal chats
+            sameDistributor -> true
             else -> false
         }
     }
@@ -191,11 +191,9 @@ class InMemoryChatRepository : ChatRepository {
 
     private fun seedStarterThreads() {
         val seedPairs = listOf(
-            "dist_admin_1" to "agent_001",
-            "dist_admin_1" to "sup_bob",
+            "cust_001" to "dist_admin_1",
             "mgr_carol" to "dist_admin_1",
-            "mgr_carol" to "agent_001",
-            "mgr_carol" to "sup_bob"
+            "mgr_carol" to "cust_001"
         )
 
         seedPairs.forEach { (userA, userB) ->

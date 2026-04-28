@@ -59,7 +59,7 @@ fun CompanyManagerDashboard(
                 0 -> ManagerHomeScreen(uiState, onNavigate = { selectedTab = it })
                 1 -> EmployeeManagementScreen(uiState, viewModel)
                 2 -> ApprovalsScreen(uiState, viewModel)
-                3 -> AgentSalesPerformanceScreen(uiState)
+                3 -> DistributorSalesPerformanceScreen(uiState)
                 4 -> RoleChatHost(
                     modifier = Modifier.fillMaxSize(),
                     chatViewModel = chatViewModel,
@@ -105,9 +105,9 @@ fun ManagerHomeScreen(state: ManagerUiState, onNavigate: (Int) -> Unit) {
 }
 
 @Composable
-fun AgentSalesPerformanceScreen(state: ManagerUiState) {
+fun DistributorSalesPerformanceScreen(state: ManagerUiState) {
     Column(modifier = Modifier.padding(16.dp)) {
-        Text("Sales Agent Performance", style = MaterialTheme.typography.titleLarge)
+        Text("Distributor Performance", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(16.dp))
         
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -115,8 +115,8 @@ fun AgentSalesPerformanceScreen(state: ManagerUiState) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(report.agentName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("ID: ${report.agentId}", style = MaterialTheme.typography.bodySmall)
+                            Text(report.distributorName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Distributor: ${report.distributorId}", style = MaterialTheme.typography.bodySmall)
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -126,8 +126,8 @@ fun AgentSalesPerformanceScreen(state: ManagerUiState) {
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("Revenue", style = MaterialTheme.typography.labelSmall)
-                                val revenueStr = String.format(Locale.getDefault(), "%.2f", report.totalRevenue)
-                                Text("$${revenueStr}", style = MaterialTheme.typography.titleLarge, color = Color(0xFF4CAF50))
+                                val revenueStr = String.format(Locale.getDefault(), "%.0f", report.totalRevenue)
+                                Text("UGX ${revenueStr}", style = MaterialTheme.typography.titleLarge, color = Color(0xFF4CAF50))
                             }
                         }
                         

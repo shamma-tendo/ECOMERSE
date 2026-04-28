@@ -5,25 +5,23 @@ import androidx.lifecycle.viewModelScope
 import com.example.ecomerse.data.AppRepository
 import com.example.ecomerse.model.*
 import kotlinx.coroutines.flow.*
-import java.util.*
 
 data class ManagerUiState(
     val employees: List<User> = listOf(
-        User("agent_001", "Alice Smith", UserRole.SALES_AGENT, "dist1", "alice@ecomerse.com", "Senior Agent"),
-        User("sup_bob", "Bob Johnson", UserRole.STOCK_SUPERVISOR, "dist1", "bob@ecomerse.com", "Warehouse Lead"),
-        User("agent_002", "Charlie Brown", UserRole.SALES_AGENT, "dist2", "charlie@ecomerse.com", "Junior Agent")
+        User("dist_staff_1", "Grace Namara", UserRole.DISTRIBUTOR, "dist1", "grace@ecomerse.com", "Distribution Lead"),
+        User("dist_staff_2", "Peter Ouma", UserRole.DISTRIBUTOR, "dist2", "peter@ecomerse.com", "Warehouse Coordinator")
     ),
     val leaveRequests: List<LeaveRequest> = listOf(
         LeaveRequest("L1", "agent_001", "Alice Smith", "2023-12-01", "2023-12-05", "Vacation"),
         LeaveRequest("L2", "agent_002", "Charlie Brown", "2023-12-10", "2023-12-11", "Medical")
     ),
     val dismissalDraft: String = "",
-    val salesReports: List<AgentSalesReport> = emptyList()
+    val salesReports: List<DistributorSalesReport> = emptyList()
 )
 
-data class AgentSalesReport(
-    val agentId: String,
-    val agentName: String,
+data class DistributorSalesReport(
+    val distributorId: String,
+    val distributorName: String,
     val totalSalesCount: Int,
     val totalRevenue: Double,
     val lastSaleTime: Long?
@@ -39,20 +37,26 @@ class ManagerViewModel : ViewModel() {
 
     private fun observeSalesData() {
         AppRepository.sales.combine(AppRepository.products) { sales, products ->
-            _uiState.value.employees
-                .filter { it.role == UserRole.SALES_AGENT }
-                .map { agent ->
-                    val agentSales = sales.filter { it.agentId == agent.id }
-                    val revenue = agentSales.sumOf { sale ->
+            sales
+                .groupBy { it.distributorId }
+                .map { (distributorId, distributorSales) ->
+                    val revenue = distributorSales.sumOf { sale ->
                         val product = products.find { it.id == sale.productId }
                         (product?.unitPrice ?: 0.0) * sale.quantity
                     }
-                    AgentSalesReport(
-                        agentId = agent.id,
-                        agentName = agent.name,
-                        totalSalesCount = agentSales.sumOf { it.quantity },
+
+                    val distributorName = when (distributorId) {
+                        "dist1" -> "North Hub"
+                        "dist2" -> "Metro Hub"
+                        else -> distributorId
+                    }
+
+                    DistributorSalesReport(
+                        distributorId = distributorId,
+                        distributorName = distributorName,
+                        totalSalesCount = distributorSales.sumOf { it.quantity },
                         totalRevenue = revenue,
-                        lastSaleTime = agentSales.maxByOrNull { it.timestamp }?.timestamp
+                        lastSaleTime = distributorSales.maxByOrNull { it.timestamp }?.timestamp
                     )
                 }
         }.onEach { reports ->

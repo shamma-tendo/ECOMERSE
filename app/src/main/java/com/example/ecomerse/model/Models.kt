@@ -3,8 +3,6 @@ package com.example.ecomerse.model
 enum class UserRole {
     CUSTOMER,
     DISTRIBUTOR,
-    SALES_AGENT,
-    STOCK_SUPERVISOR,
     COMPANY_MANAGER
 }
 
@@ -36,11 +34,25 @@ enum class LeaveStatus {
     PENDING, APPROVED, REJECTED
 }
 
+enum class PaymentMethod {
+    CASH,
+    CREDIT
+}
+
+enum class GoodsRequestStatus {
+    PENDING,
+    APPROVED,
+    FULFILLED,
+    SETTLED,
+    REJECTED
+}
+
 data class Product(
     val id: String,
     val name: String,
     val description: String,
-    val unitPrice: Double
+    val unitPrice: Double,
+    val unit: String = "unit"
 )
 
 data class InventoryItem(
@@ -53,9 +65,30 @@ data class Sale(
     val id: String,
     val productId: String,
     val distributorId: String,
-    val agentId: String,
+    val handledByUserId: String,
     val quantity: Int,
-    val timestamp: Long
+    val timestamp: Long,
+    val paymentMethod: PaymentMethod = PaymentMethod.CASH,
+    val requestId: String? = null
+)
+
+data class GoodsRequest(
+    val id: String,
+    val customerId: String,
+    val customerName: String,
+    val distributorId: String,
+    val productId: String,
+    val quantity: Int,
+    val unitPrice: Double,
+    val totalAmount: Double,
+    val paymentMethod: PaymentMethod,
+    val status: GoodsRequestStatus = GoodsRequestStatus.PENDING,
+    val requestedAt: Long,
+    val dueAt: Long? = null,
+    val fulfilledAt: Long? = null,
+    val settledAt: Long? = null,
+    val handledByUserId: String? = null,
+    val note: String = ""
 )
 
 data class ActivityLog(

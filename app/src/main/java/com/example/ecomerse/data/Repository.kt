@@ -9,29 +9,50 @@ import java.util.*
 object AppRepository {
     private val _products = MutableStateFlow<List<Product>>(
         listOf(
-            Product("1", "Product A", "Standard Stock Item", 10.0),
-            Product("2", "Product B", "Premium Quality Item", 25.0),
-            Product("3", "Product C", "Bulk Supply Unit", 45.0),
-            Product("4", "Product D", "Essential Tool", 15.0),
-            Product("5", "Product E", "Accessories Kit", 8.0)
+            Product("1", "Rice", "High-quality long-grain rice, 25kg per bag", 84375.0, "bag (25kg)"),
+            Product("2", "Cooking Oil", "Pure vegetable cooking oil, 5L per jerrican", 32800.0, "jerrican (5L)"),
+            Product("3", "Sugar", "Granulated sugar, 50kg per bag", 142500.0, "bag (50kg)"),
+            Product("4", "Laundry Detergent", "Powerful cleaning powder, 1kg per pack", 13125.0, "pack (1kg)"),
+            Product("5", "Bar Soap", "Premium bath soap, box of 72 bars", 53400.0, "box (72 bars)"),
+            Product("6", "Toothpaste", "Fluoride toothpaste, box of 12 tubes", 63700.0, "box (12 tubes)"),
+            Product("7", "Toilet Paper", "Soft tissue rolls, pack of 10", 22500.0, "pack (10 rolls)"),
+            Product("8", "Bottled Water", "Purified drinking water, crate of 24 bottles", 16875.0, "crate (24 bottles)"),
+            Product("9", "Diapers", "Infant/toddler diapers, pack of 50", 69375.0, "pack (50)")
         )
     )
     val products: StateFlow<List<Product>> = _products
 
     private val _inventory = MutableStateFlow<List<InventoryItem>>(
         listOf(
-            InventoryItem("1", "dist1", 100),
-            InventoryItem("2", "dist1", 50),
-            InventoryItem("3", "dist1", 20),
-            InventoryItem("1", "dist2", 80),
-            InventoryItem("4", "dist2", 150),
-            InventoryItem("5", "dist2", 200)
+            // North Hub (dist1) inventory
+            InventoryItem("1", "dist1", 150),
+            InventoryItem("2", "dist1", 85),
+            InventoryItem("3", "dist1", 60),
+            InventoryItem("4", "dist1", 200),
+            InventoryItem("5", "dist1", 120),
+            InventoryItem("6", "dist1", 95),
+            InventoryItem("7", "dist1", 180),
+            InventoryItem("8", "dist1", 250),
+            InventoryItem("9", "dist1", 140),
+            // Metro Hub (dist2) inventory
+            InventoryItem("1", "dist2", 120),
+            InventoryItem("2", "dist2", 90),
+            InventoryItem("3", "dist2", 75),
+            InventoryItem("4", "dist2", 220),
+            InventoryItem("5", "dist2", 110),
+            InventoryItem("6", "dist2", 105),
+            InventoryItem("7", "dist2", 200),
+            InventoryItem("8", "dist2", 280),
+            InventoryItem("9", "dist2", 160)
         )
     )
     val inventory: StateFlow<List<InventoryItem>> = _inventory
 
     private val _sales = MutableStateFlow<List<Sale>>(emptyList())
     val sales: StateFlow<List<Sale>> = _sales
+
+    private val _goodsRequests = MutableStateFlow<List<GoodsRequest>>(emptyList())
+    val goodsRequests: StateFlow<List<GoodsRequest>> = _goodsRequests
 
     private val _activityLogs = MutableStateFlow<List<ActivityLog>>(emptyList())
     val activityLogs: StateFlow<List<ActivityLog>> = _activityLogs
@@ -63,7 +84,14 @@ object AppRepository {
         }
     }
 
-    fun recordSale(productId: String, distributorId: String, agentId: String, quantity: Int) {
+    fun recordSale(
+        productId: String,
+        distributorId: String,
+        handledByUserId: String,
+        quantity: Int,
+        paymentMethod: PaymentMethod = PaymentMethod.CASH,
+        requestId: String? = null
+    ): Boolean {
         val currentInventory = _inventory.value.toMutableList()
         val index = currentInventory.indexOfFirst { it.productId == productId && it.distributorId == distributorId }
         
@@ -77,17 +105,22 @@ object AppRepository {
                     id = UUID.randomUUID().toString(),
                     productId = productId,
                     distributorId = distributorId,
-                    agentId = agentId,
+                    handledByUserId = handledByUserId,
                     quantity = quantity,
-                    timestamp = System.currentTimeMillis()
+                    timestamp = System.currentTimeMillis(),
+                    paymentMethod = paymentMethod,
+                    requestId = requestId
                 )
                 _sales.value = _sales.value + sale
-                logActivity(agentId, "Recorded sale: $quantity units of Product $productId")
-                
+                logActivity(handledByUserId, "Recorded ${paymentMethod.name.lowercase(Locale.ROOT)} sale: $quantity units of Product $productId")
+
                 // Rewards logic placeholder
                 checkRewards(distributorId)
+                return true
             }
         }
+
+        return false
     }
 
     private fun checkRewards(distributorId: String) {
@@ -99,6 +132,117 @@ object AppRepository {
 
     fun updateStock(productId: String, distributorId: String, addedQuantity: Int, userId: String) {
         distributeStock(productId, distributorId, addedQuantity, userId)
+    }
+
+    fun submitGoodsRequest(
+        customerId: String,
+        customerName: String,
+        distributorId: String,
+        productId: String,
+        quantity: Int,
+        paymentMethod: PaymentMethod,
+        note: String = ""
+    ): Boolean {
+        if (quantity <= 0) return false
+
+        val product = _products.value.find { it.id == productId } ?: return false
+        val now = System.currentTimeMillis()
+        val request = GoodsRequest(
+            id = UUID.randomUUID().toString(),
+            customerId = customerId,
+            customerName = customerName,
+            distributorId = distributorId,
+            productId = productId,
+            quantity = quantity,
+            unitPrice = product.unitPrice,
+            totalAmount = product.unitPrice * quantity,
+            paymentMethod = paymentMethod,
+            requestedAt = now,
+            dueAt = if (paymentMethod == PaymentMethod.CREDIT) now + 30L * 24 * 60 * 60 * 1000 else null,
+            note = note.trim()
+        )
+
+        _goodsRequests.value = _goodsRequests.value + request
+        logActivity(customerId, "Submitted ${paymentMethod.name.lowercase(Locale.ROOT)} request for $quantity x ${product.name}")
+        return true
+    }
+
+    fun approveGoodsRequest(requestId: String, userId: String): Boolean {
+        return updateGoodsRequest(requestId) {
+            if (it.status == GoodsRequestStatus.PENDING) {
+                it.copy(status = GoodsRequestStatus.APPROVED)
+            } else {
+                it
+            }
+        }.also { updated ->
+            if (updated) logActivity(userId, "Approved goods request $requestId")
+        }
+    }
+
+    fun rejectGoodsRequest(requestId: String, userId: String): Boolean {
+        return updateGoodsRequest(requestId) {
+            if (it.status == GoodsRequestStatus.SETTLED) {
+                it
+            } else {
+                it.copy(status = GoodsRequestStatus.REJECTED)
+            }
+        }.also { updated ->
+            if (updated) logActivity(userId, "Rejected goods request $requestId")
+        }
+    }
+
+    fun fulfillGoodsRequest(requestId: String, handledByUserId: String): Boolean {
+        val request = _goodsRequests.value.find { it.id == requestId } ?: return false
+        if (request.status == GoodsRequestStatus.REJECTED || request.status == GoodsRequestStatus.SETTLED) return false
+
+        val saleRecorded = recordSale(
+            productId = request.productId,
+            distributorId = request.distributorId,
+            handledByUserId = handledByUserId,
+            quantity = request.quantity,
+            paymentMethod = request.paymentMethod,
+            requestId = request.id
+        )
+
+        if (!saleRecorded) return false
+
+        val now = System.currentTimeMillis()
+        val newStatus = if (request.paymentMethod == PaymentMethod.CASH) GoodsRequestStatus.SETTLED else GoodsRequestStatus.FULFILLED
+        val updatedRequest = request.copy(
+            status = newStatus,
+            fulfilledAt = now,
+            settledAt = if (request.paymentMethod == PaymentMethod.CASH) now else request.settledAt,
+            handledByUserId = handledByUserId
+        )
+
+        _goodsRequests.value = _goodsRequests.value.map { if (it.id == requestId) updatedRequest else it }
+        logActivity(handledByUserId, "Fulfilled goods request $requestId")
+        return true
+    }
+
+    fun settleCreditRequest(requestId: String, userId: String): Boolean {
+        val request = _goodsRequests.value.find { it.id == requestId } ?: return false
+        if (request.paymentMethod != PaymentMethod.CREDIT || request.status != GoodsRequestStatus.FULFILLED) return false
+
+        _goodsRequests.update { list ->
+            list.map {
+                if (it.id == requestId) {
+                    it.copy(status = GoodsRequestStatus.SETTLED, settledAt = System.currentTimeMillis())
+                } else {
+                    it
+                }
+            }
+        }
+
+        logActivity(userId, "Settled credit request $requestId")
+        return true
+    }
+
+    private fun updateGoodsRequest(requestId: String, transform: (GoodsRequest) -> GoodsRequest): Boolean {
+        val existing = _goodsRequests.value.find { it.id == requestId } ?: return false
+        val updated = transform(existing)
+        _goodsRequests.value = _goodsRequests.value.map { if (it.id == requestId) updated else it }
+        return true
     }
 
     fun logActivity(userId: String, action: String) {
@@ -132,8 +276,6 @@ object SessionManager {
         val user = when(role) {
             UserRole.CUSTOMER -> User("cust_001", "Customer Demo", UserRole.CUSTOMER)
             UserRole.DISTRIBUTOR -> User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1")
-            UserRole.SALES_AGENT -> User("agent_001", "Alice Smith", UserRole.SALES_AGENT, "dist1")
-            UserRole.STOCK_SUPERVISOR -> User("sup_bob", "Bob Johnson", UserRole.STOCK_SUPERVISOR, "dist1")
             UserRole.COMPANY_MANAGER -> User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER)
         }
         _currentUser.value = user
@@ -177,8 +319,6 @@ object SessionManager {
     fun demoCredentials(): List<Pair<String, String>> = listOf(
         "customer@ecomerse.com" to "pass1234",
         "distributor@ecomerse.com" to "pass1234",
-        "agent@ecomerse.com" to "pass1234",
-        "supervisor@ecomerse.com" to "pass1234",
         "manager@ecomerse.com" to "pass1234"
     )
 
@@ -201,16 +341,6 @@ object SessionManager {
             user = User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1")
         )
         addAccount(
-            email = "agent@ecomerse.com",
-            password = "pass1234",
-            user = User("agent_001", "Alice Smith", UserRole.SALES_AGENT, "dist1")
-        )
-        addAccount(
-            email = "supervisor@ecomerse.com",
-            password = "pass1234",
-            user = User("sup_bob", "Bob Johnson", UserRole.STOCK_SUPERVISOR, "dist1")
-        )
-        addAccount(
             email = "manager@ecomerse.com",
             password = "pass1234",
             user = User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER)
@@ -229,8 +359,6 @@ object SessionManager {
         val prefix = when (role) {
             UserRole.CUSTOMER -> "cust"
             UserRole.DISTRIBUTOR -> "dist"
-            UserRole.SALES_AGENT -> "agent"
-            UserRole.STOCK_SUPERVISOR -> "sup"
             UserRole.COMPANY_MANAGER -> "mgr"
         }
         val count = authAccounts.values.count { it.user.role == role } + 1
