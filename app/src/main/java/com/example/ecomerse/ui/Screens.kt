@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.example.ecomerse.data.AppRepository
 import com.example.ecomerse.data.ChatRepositoryProvider
 import com.example.ecomerse.data.SessionManager
+import com.example.ecomerse.model.User
 import com.example.ecomerse.model.UserRole
 import com.example.ecomerse.ui.chat.ChatConversationScreen
 import com.example.ecomerse.ui.chat.ChatThreadListScreen
@@ -258,18 +259,16 @@ fun SignUpScreen(onBack: () -> Unit) {
 
         Button(
             onClick = {
-                val registered = SessionManager.register(
+                errorMessage = null
+                SessionManager.register(
                     name = name,
                     email = email,
                     password = password,
                     role = UserRole.CUSTOMER
-                )
-
-                if (registered) {
-                    errorMessage = null
-                    SessionManager.login(email, password)
-                } else {
-                    errorMessage = "Sign up failed. Use a unique email and password with at least 4 characters."
+                ) { success, error ->
+                    if (!success) {
+                        errorMessage = error
+                    }
                 }
             },
             modifier = Modifier
@@ -364,8 +363,12 @@ fun LoginScreen(onBack: () -> Unit) {
 
         Button(
             onClick = {
-                val success = SessionManager.login(email, password)
-                errorMessage = if (success) null else "Invalid email or password"
+                errorMessage = null
+                SessionManager.login(email, password) { success, error ->
+                    if (!success) {
+                        errorMessage = error
+                    }
+                }
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -438,8 +441,58 @@ fun CustomerDashboardScreen() {
     val products by AppRepository.products.collectAsState()
     val inventory by AppRepository.inventory.collectAsState()
     val requests by AppRepository.goodsRequests.collectAsState()
+    
+    var selectedTab by rememberSaveable { mutableStateOf(CustomerBottomTab.HOME) }
+    var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
+    val chatViewModel: ChatViewModel = viewModel(
+        factory = ChatViewModel.factory(
+            chatRepository = ChatRepositoryProvider.repository,
+            sessionManager = SessionManager
+        )
+    )
 
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                CustomerBottomTab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        icon = { Icon(tab.icon, contentDescription = tab.title) },
+                        label = { Text(tab.title) }
+                    )
+                }
+            }
+        }
+    ) { innerPadding ->
+        Crossfade(targetState = selectedTab, modifier = Modifier.padding(innerPadding)) { tab ->
+            when (tab) {
+                CustomerBottomTab.HOME -> CustomerHomeContent(user, products, inventory, requests)
+                CustomerBottomTab.CHAT -> RoleChatHost(
+                    modifier = Modifier.fillMaxSize(),
+                    chatViewModel = chatViewModel,
+                    activeThreadId = chatThreadId,
+                    onThreadChange = { chatThreadId = it }
+                )
+            }
+        }
+    }
+}
+
+private enum class CustomerBottomTab(val title: String, val icon: ImageVector) {
+    HOME("Home", Icons.Default.Home),
+    CHAT("Chat", Icons.AutoMirrored.Filled.Chat)
+}
+
+@Composable
+private fun CustomerHomeContent(
+    user: User?,
+    products: List<com.example.ecomerse.model.Product>,
+    inventory: List<com.example.ecomerse.model.InventoryItem>,
+    requests: List<com.example.ecomerse.model.GoodsRequest>
+) {
     val customerRequests = requests.filter { it.customerId == user?.id }
+    // ... (rest of the original CustomerDashboardScreen logic here)
     val openCreditBalance = customerRequests
         .filter { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED }
         .sumOf { it.totalAmount }

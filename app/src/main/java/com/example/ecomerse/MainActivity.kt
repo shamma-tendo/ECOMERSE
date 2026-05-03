@@ -25,6 +25,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Push data to Firebase (Run once, then you can remove this line)
+        com.example.ecomerse.data.AppRepository.seedDataToFirebase()
+
         setContent {
             val systemTheme = isSystemInDarkTheme()
             var isDarkMode by remember { mutableStateOf(systemTheme) }

@@ -7,14 +7,8 @@ import com.example.ecomerse.model.*
 import kotlinx.coroutines.flow.*
 
 data class ManagerUiState(
-    val employees: List<User> = listOf(
-        User("dist_staff_1", "Grace Namara", UserRole.DISTRIBUTOR, "dist1", "grace@ecomerse.com", "Distribution Lead"),
-        User("dist_staff_2", "Peter Ouma", UserRole.DISTRIBUTOR, "dist2", "peter@ecomerse.com", "Warehouse Coordinator")
-    ),
-    val leaveRequests: List<LeaveRequest> = listOf(
-        LeaveRequest("L1", "agent_001", "Alice Smith", "2023-12-01", "2023-12-05", "Vacation"),
-        LeaveRequest("L2", "agent_002", "Charlie Brown", "2023-12-10", "2023-12-11", "Medical")
-    ),
+    val employees: List<User> = emptyList(),
+    val leaveRequests: List<LeaveRequest> = emptyList(),
     val dismissalDraft: String = "",
     val salesReports: List<DistributorSalesReport> = emptyList()
 )
@@ -32,10 +26,11 @@ class ManagerViewModel : ViewModel() {
     val uiState: StateFlow<ManagerUiState> = _uiState.asStateFlow()
 
     init {
-        observeSalesData()
+        observeData()
     }
 
-    private fun observeSalesData() {
+    private fun observeData() {
+        // Observe Sales and Products for reports
         AppRepository.sales.combine(AppRepository.products) { sales, products ->
             sales
                 .groupBy { it.distributorId }
@@ -62,23 +57,25 @@ class ManagerViewModel : ViewModel() {
         }.onEach { reports ->
             _uiState.update { it.copy(salesReports = reports) }
         }.launchIn(viewModelScope)
+
+        // Observe Employees
+        AppRepository.employees.onEach { employees ->
+            _uiState.update { it.copy(employees = employees) }
+        }.launchIn(viewModelScope)
+
+        // Observe Leave Requests
+        AppRepository.leaveRequests.onEach { leaveRequests ->
+            _uiState.update { it.copy(leaveRequests = leaveRequests) }
+        }.launchIn(viewModelScope)
     }
 
     fun approveLeave(requestId: String) {
-        _uiState.update { state ->
-            state.copy(leaveRequests = state.leaveRequests.map {
-                if (it.id == requestId) it.copy(status = LeaveStatus.APPROVED) else it
-            })
-        }
+        AppRepository.updateLeaveStatus(requestId, LeaveStatus.APPROVED)
         AppRepository.logActivity("MANAGER", "Approved leave request $requestId")
     }
 
     fun rejectLeave(requestId: String) {
-        _uiState.update { state ->
-            state.copy(leaveRequests = state.leaveRequests.map {
-                if (it.id == requestId) it.copy(status = LeaveStatus.REJECTED) else it
-            })
-        }
+        AppRepository.updateLeaveStatus(requestId, LeaveStatus.REJECTED)
         AppRepository.logActivity("MANAGER", "Rejected leave request $requestId")
     }
 
@@ -87,11 +84,7 @@ class ManagerViewModel : ViewModel() {
     }
 
     fun terminateEmployee(employeeId: String) {
-        _uiState.update { state ->
-            state.copy(employees = state.employees.map {
-                if (it.id == employeeId) it.copy(status = EmployeeStatus.INACTIVE) else it
-            })
-        }
+        AppRepository.updateEmployeeStatus(employeeId, EmployeeStatus.INACTIVE)
         AppRepository.logActivity("MANAGER", "Terminated employee $employeeId")
     }
 }
