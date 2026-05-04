@@ -1,41 +1,17 @@
 package com.example.ecomerse.ui.chat
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Badge
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material3.Icon
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -44,10 +20,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.ecomerse.model.ChatMessage
 import com.example.ecomerse.model.ChatThread
+import com.example.ecomerse.model.User
+import com.example.ecomerse.model.UserRole
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatThreadListScreen(
     viewModel: ChatViewModel,
@@ -55,45 +34,109 @@ fun ChatThreadListScreen(
     modifier: Modifier = Modifier
 ) {
     val threads by viewModel.threads.collectAsState()
-    val currentUserId = viewModel.currentUser()?.id
+    val allUsers by viewModel.allUsers.collectAsState()
+    val currentUser = viewModel.currentUser()
+    var showUserPicker by remember { mutableStateOf(false) }
 
-    LaunchedEffect(currentUserId) {
+    LaunchedEffect(currentUser?.id) {
         viewModel.loadThreads()
     }
 
-    if (threads.isEmpty()) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = "No conversations yet",
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center
-            )
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showUserPicker = true }) {
+                Icon(Icons.Default.Add, contentDescription = "New Chat")
+            }
         }
-        return
+    ) { padding ->
+        Column(modifier = modifier.fillMaxSize().padding(padding)) {
+            if (threads.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "No conversations yet\nTap + to start one",
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    item {
+                        Text("Team Chat", style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            "Messaging based on your role permissions",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    items(threads, key = { it.id }) { thread ->
+                        ChatThreadListItem(
+                            thread = thread,
+                            unreadCount = currentUser?.id?.let { thread.unreadCountByUser[it] ?: 0 } ?: 0,
+                            onClick = { onThreadClick(thread.id) }
+                        )
+                    }
+                }
+            }
+        }
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Text("Team Chat", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                "Realtime messaging across all roles",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+    if (showUserPicker && currentUser != null) {
+        UserPickerCallback(
+            currentUser = currentUser,
+            allUsers = allUsers,
+            onUserSelected = { target ->
+                viewModel.startDirectChat(target) { threadId ->
+                    onThreadClick(threadId)
+                }
+                showUserPicker = false
+            },
+            onDismiss = { showUserPicker = false }
+        )
+    }
+}
 
-        items(threads, key = { it.id }) { thread ->
-            ChatThreadListItem(
-                thread = thread,
-                unreadCount = currentUserId?.let { thread.unreadCountByUser[it] ?: 0 } ?: 0,
-                onClick = { onThreadClick(thread.id) }
-            )
+@Composable
+private fun UserPickerCallback(
+    currentUser: User,
+    allUsers: List<User>,
+    onUserSelected: (User) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val allowedUsers = allUsers.filter { target ->
+        target.id != currentUser.id && when (currentUser.role) {
+            UserRole.CUSTOMER -> target.role == UserRole.DISTRIBUTOR
+            UserRole.DISTRIBUTOR -> target.role == UserRole.CUSTOMER || target.role == UserRole.COMPANY_MANAGER || target.role == UserRole.DISTRIBUTOR
+            UserRole.COMPANY_MANAGER -> target.role == UserRole.DISTRIBUTOR
         }
     }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Start Conversation") },
+        text = {
+            if (allowedUsers.isEmpty()) {
+                Text("No available contacts found for your role.")
+            } else {
+                LazyColumn {
+                    items(allowedUsers) { user ->
+                        ListItem(
+                            headlineContent = { Text(user.name) },
+                            supportingContent = { Text(user.role.name) },
+                            modifier = Modifier.clickable { onUserSelected(user) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

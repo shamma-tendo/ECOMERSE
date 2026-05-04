@@ -25,6 +25,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Push data to Firebase (Run once, then you can remove this line)
+        com.example.ecomerse.data.AppRepository.seedDataToFirebase()
+
         setContent {
             val systemTheme = isSystemInDarkTheme()
             var isDarkMode by remember { mutableStateOf(systemTheme) }
@@ -94,10 +97,8 @@ fun MainContent(isDarkMode: Boolean, onToggleTheme: () -> Unit) {
                     LaunchedEffect(Unit) { currentScreen = ScreenState.LANDING }
 
                     when (user.role) {
-                        UserRole.CUSTOMER -> SalesAgentScreen()
-                        UserRole.SALES_AGENT -> SalesAgentScreen()
+                        UserRole.CUSTOMER -> com.example.ecomerse.ui.CustomerDashboardScreen()
                         UserRole.DISTRIBUTOR -> DistributorInventoryScreen()
-                        UserRole.STOCK_SUPERVISOR -> DistributorInventoryScreen()
                         UserRole.COMPANY_MANAGER -> CompanyManagerDashboard()
                     }
                 }

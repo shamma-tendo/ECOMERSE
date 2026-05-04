@@ -5,25 +5,17 @@ import androidx.lifecycle.viewModelScope
 import com.example.ecomerse.data.AppRepository
 import com.example.ecomerse.model.*
 import kotlinx.coroutines.flow.*
-import java.util.*
 
 data class ManagerUiState(
-    val employees: List<User> = listOf(
-        User("agent_001", "Alice Smith", UserRole.SALES_AGENT, "dist1", "alice@ecomerse.com", "Senior Agent"),
-        User("sup_bob", "Bob Johnson", UserRole.STOCK_SUPERVISOR, "dist1", "bob@ecomerse.com", "Warehouse Lead"),
-        User("agent_002", "Charlie Brown", UserRole.SALES_AGENT, "dist2", "charlie@ecomerse.com", "Junior Agent")
-    ),
-    val leaveRequests: List<LeaveRequest> = listOf(
-        LeaveRequest("L1", "agent_001", "Alice Smith", "2023-12-01", "2023-12-05", "Vacation"),
-        LeaveRequest("L2", "agent_002", "Charlie Brown", "2023-12-10", "2023-12-11", "Medical")
-    ),
+    val employees: List<User> = emptyList(),
+    val leaveRequests: List<LeaveRequest> = emptyList(),
     val dismissalDraft: String = "",
-    val salesReports: List<AgentSalesReport> = emptyList()
+    val salesReports: List<DistributorSalesReport> = emptyList()
 )
 
-data class AgentSalesReport(
-    val agentId: String,
-    val agentName: String,
+data class DistributorSalesReport(
+    val distributorId: String,
+    val distributorName: String,
     val totalSalesCount: Int,
     val totalRevenue: Double,
     val lastSaleTime: Long?
@@ -34,47 +26,56 @@ class ManagerViewModel : ViewModel() {
     val uiState: StateFlow<ManagerUiState> = _uiState.asStateFlow()
 
     init {
-        observeSalesData()
+        observeData()
     }
 
-    private fun observeSalesData() {
+    private fun observeData() {
+        // Observe Sales and Products for reports
         AppRepository.sales.combine(AppRepository.products) { sales, products ->
-            _uiState.value.employees
-                .filter { it.role == UserRole.SALES_AGENT }
-                .map { agent ->
-                    val agentSales = sales.filter { it.agentId == agent.id }
-                    val revenue = agentSales.sumOf { sale ->
+            sales
+                .groupBy { it.distributorId }
+                .map { (distributorId, distributorSales) ->
+                    val revenue = distributorSales.sumOf { sale ->
                         val product = products.find { it.id == sale.productId }
                         (product?.unitPrice ?: 0.0) * sale.quantity
                     }
-                    AgentSalesReport(
-                        agentId = agent.id,
-                        agentName = agent.name,
-                        totalSalesCount = agentSales.sumOf { it.quantity },
+
+                    val distributorName = when (distributorId) {
+                        "dist1" -> "North Hub"
+                        "dist2" -> "Metro Hub"
+                        else -> distributorId
+                    }
+
+                    DistributorSalesReport(
+                        distributorId = distributorId,
+                        distributorName = distributorName,
+                        totalSalesCount = distributorSales.sumOf { it.quantity },
                         totalRevenue = revenue,
-                        lastSaleTime = agentSales.maxByOrNull { it.timestamp }?.timestamp
+                        lastSaleTime = distributorSales.maxByOrNull { it.timestamp }?.timestamp
                     )
                 }
         }.onEach { reports ->
             _uiState.update { it.copy(salesReports = reports) }
         }.launchIn(viewModelScope)
+
+        // Observe Employees
+        AppRepository.employees.onEach { employees ->
+            _uiState.update { it.copy(employees = employees) }
+        }.launchIn(viewModelScope)
+
+        // Observe Leave Requests
+        AppRepository.leaveRequests.onEach { leaveRequests ->
+            _uiState.update { it.copy(leaveRequests = leaveRequests) }
+        }.launchIn(viewModelScope)
     }
 
     fun approveLeave(requestId: String) {
-        _uiState.update { state ->
-            state.copy(leaveRequests = state.leaveRequests.map {
-                if (it.id == requestId) it.copy(status = LeaveStatus.APPROVED) else it
-            })
-        }
+        AppRepository.updateLeaveStatus(requestId, LeaveStatus.APPROVED)
         AppRepository.logActivity("MANAGER", "Approved leave request $requestId")
     }
 
     fun rejectLeave(requestId: String) {
-        _uiState.update { state ->
-            state.copy(leaveRequests = state.leaveRequests.map {
-                if (it.id == requestId) it.copy(status = LeaveStatus.REJECTED) else it
-            })
-        }
+        AppRepository.updateLeaveStatus(requestId, LeaveStatus.REJECTED)
         AppRepository.logActivity("MANAGER", "Rejected leave request $requestId")
     }
 
@@ -83,11 +84,7 @@ class ManagerViewModel : ViewModel() {
     }
 
     fun terminateEmployee(employeeId: String) {
-        _uiState.update { state ->
-            state.copy(employees = state.employees.map {
-                if (it.id == employeeId) it.copy(status = EmployeeStatus.INACTIVE) else it
-            })
-        }
+        AppRepository.updateEmployeeStatus(employeeId, EmployeeStatus.INACTIVE)
         AppRepository.logActivity("MANAGER", "Terminated employee $employeeId")
     }
 }

@@ -26,6 +26,8 @@ class ChatViewModel(
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+    
+    val allUsers = com.example.ecomerse.data.AppRepository.allUsers
 
     private val _currentThreadId = MutableStateFlow<String?>(null)
     val currentThreadId: StateFlow<String?> = _currentThreadId.asStateFlow()
@@ -80,6 +82,18 @@ class ChatViewModel(
     fun markRead(threadId: String) {
         val userId = sessionManager.currentUser.value?.id ?: return
         chatRepository.markThreadRead(threadId, userId)
+    }
+
+    fun startDirectChat(targetUser: User, onStarted: (String) -> Unit) {
+        val currentUser = sessionManager.currentUser.value ?: return
+        viewModelScope.launch {
+            try {
+                val threadId = chatRepository.createOrGetDirectThread(currentUser, targetUser)
+                onStarted(threadId)
+            } catch (e: Exception) {
+                // Handle permission error or user not found
+            }
+        }
     }
 
     fun currentUser(): User? = sessionManager.currentUser.value

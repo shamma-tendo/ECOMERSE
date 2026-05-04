@@ -30,6 +30,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import com.example.ecomerse.data.AppRepository
 import com.example.ecomerse.data.ChatRepositoryProvider
 import com.example.ecomerse.data.SessionManager
+import com.example.ecomerse.model.User
 import com.example.ecomerse.model.UserRole
 import com.example.ecomerse.ui.chat.ChatConversationScreen
 import com.example.ecomerse.ui.chat.ChatThreadListScreen
@@ -257,18 +259,16 @@ fun SignUpScreen(onBack: () -> Unit) {
 
         Button(
             onClick = {
-                val registered = SessionManager.register(
+                errorMessage = null
+                SessionManager.register(
                     name = name,
                     email = email,
                     password = password,
                     role = UserRole.CUSTOMER
-                )
-
-                if (registered) {
-                    errorMessage = null
-                    SessionManager.login(email, password)
-                } else {
-                    errorMessage = "Sign up failed. Use a unique email and password with at least 4 characters."
+                ) { success, error ->
+                    if (!success) {
+                        errorMessage = error
+                    }
                 }
             },
             modifier = Modifier
@@ -363,8 +363,12 @@ fun LoginScreen(onBack: () -> Unit) {
 
         Button(
             onClick = {
-                val success = SessionManager.login(email, password)
-                errorMessage = if (success) null else "Invalid email or password"
+                errorMessage = null
+                SessionManager.login(email, password) { success, error ->
+                    if (!success) {
+                        errorMessage = error
+                    }
+                }
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -432,53 +436,415 @@ fun LoginScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun SalesAgentScreen() {
-    val products by AppRepository.products.collectAsState()
+fun CustomerDashboardScreen() {
     val user by SessionManager.currentUser.collectAsState()
+    val products by AppRepository.products.collectAsState()
     val inventory by AppRepository.inventory.collectAsState()
+    val requests by AppRepository.goodsRequests.collectAsState()
+    
+    var selectedTab by rememberSaveable { mutableStateOf(CustomerBottomTab.HOME) }
+    var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
     val chatViewModel: ChatViewModel = viewModel(
         factory = ChatViewModel.factory(
             chatRepository = ChatRepositoryProvider.repository,
             sessionManager = SessionManager
         )
     )
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val distId = user?.distributorId ?: ""
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                CustomerBottomTab.entries.forEach { tab ->
+                    NavigationBarItem(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        icon = { Icon(tab.icon, contentDescription = tab.title) },
+                        label = { Text(tab.title) }
+                    )
+                }
+            }
+        }
+    ) { innerPadding ->
+        Crossfade(targetState = selectedTab, modifier = Modifier.padding(innerPadding)) { tab ->
+            when (tab) {
+                CustomerBottomTab.HOME -> CustomerHomeContent(user, products, inventory, requests)
+                CustomerBottomTab.CHAT -> RoleChatHost(
+                    modifier = Modifier.fillMaxSize(),
+                    chatViewModel = chatViewModel,
+                    activeThreadId = chatThreadId,
+                    onThreadChange = { chatThreadId = it }
+                )
+            }
+        }
+    }
+}
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = selectedTab) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Inventory") })
-            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Chat") })
+private enum class CustomerBottomTab(val title: String, val icon: ImageVector) {
+    HOME("Home", Icons.Default.Home),
+    CHAT("Chat", Icons.AutoMirrored.Filled.Chat)
+}
+
+@Composable
+private fun CustomerHomeContent(
+    user: User?,
+    products: List<com.example.ecomerse.model.Product>,
+    inventory: List<com.example.ecomerse.model.InventoryItem>,
+    requests: List<com.example.ecomerse.model.GoodsRequest>
+) {
+    val customerRequests = requests.filter { it.customerId == user?.id }
+    // ... (rest of the original CustomerDashboardScreen logic here)
+    val openCreditBalance = customerRequests
+        .filter { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED }
+        .sumOf { it.totalAmount }
+    val completedRequests = customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }
+    val pendingRequests = customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING || it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED }
+    val distinctDistributors = inventory.map { it.distributorId }.distinct()
+    val requestCountAnimated by animateIntAsState(targetValue = customerRequests.size, label = "customer-request-count")
+    val balanceAnimated by animateFloatAsState(targetValue = openCreditBalance.toFloat(), label = "customer-credit-balance")
+
+    // --- Aggregation helpers for periods ---
+    fun isSameDay(ts: Long, now: Long): Boolean {
+        val calNow = Calendar.getInstance().apply { timeInMillis = now }
+        val calTs = Calendar.getInstance().apply { timeInMillis = ts }
+        return calNow.get(Calendar.YEAR) == calTs.get(Calendar.YEAR) && calNow.get(Calendar.DAY_OF_YEAR) == calTs.get(Calendar.DAY_OF_YEAR)
+    }
+
+    fun isWithinLastDays(ts: Long, now: Long, days: Int): Boolean {
+        return now - ts <= days * 24L * 60L * 60L * 1000L
+    }
+
+    fun isSameMonth(ts: Long, now: Long): Boolean {
+        val calNow = Calendar.getInstance().apply { timeInMillis = now }
+        val calTs = Calendar.getInstance().apply { timeInMillis = ts }
+        return calNow.get(Calendar.YEAR) == calTs.get(Calendar.YEAR) && calNow.get(Calendar.MONTH) == calTs.get(Calendar.MONTH)
+    }
+
+    val now = System.currentTimeMillis()
+
+    fun sumForPeriod(method: com.example.ecomerse.model.PaymentMethod, period: String): Double {
+        val relevant = customerRequests.filter { (it.paymentMethod == method) && (it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED || it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED) }
+        return relevant.filter { req ->
+            when (period) {
+                "day" -> isSameDay(req.requestedAt, now)
+                "week" -> isWithinLastDays(req.requestedAt, now, 7)
+                "month" -> isSameMonth(req.requestedAt, now)
+                else -> false
+            }
+        }.sumOf { it.totalAmount }
+    }
+
+    val cashDay = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CASH, "day")
+    val cashWeek = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CASH, "week")
+    val cashMonth = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CASH, "month")
+
+    val creditDay = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CREDIT, "day")
+    val creditWeek = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CREDIT, "week")
+    val creditMonth = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CREDIT, "month")
+
+    var selectedProductId by rememberSaveable { mutableStateOf(products.firstOrNull()?.id.orEmpty()) }
+    var selectedDistributorId by rememberSaveable { mutableStateOf(distinctDistributors.firstOrNull().orEmpty()) }
+    var quantityText by rememberSaveable { mutableStateOf("1") }
+    var note by rememberSaveable { mutableStateOf("") }
+    var paymentMethod by remember { mutableStateOf(com.example.ecomerse.model.PaymentMethod.CASH) }
+    var submitMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(products, distinctDistributors) {
+        if (selectedProductId.isBlank()) {
+            selectedProductId = products.firstOrNull()?.id.orEmpty()
+        }
+        if (selectedDistributorId.isBlank()) {
+            selectedDistributorId = distinctDistributors.firstOrNull().orEmpty()
+        }
+    }
+
+    val selectedProduct = products.find { it.id == selectedProductId }
+    val eligibleDistributors = if (selectedProductId.isNotBlank()) {
+        inventory.filter { it.productId == selectedProductId }.map { it.distributorId }.distinct()
+    } else {
+        distinctDistributors
+    }
+
+    LaunchedEffect(selectedProductId, eligibleDistributors) {
+        if (selectedDistributorId !in eligibleDistributors && eligibleDistributors.isNotEmpty()) {
+            selectedDistributorId = eligibleDistributors.first()
+        }
+    }
+
+    val availableStock = inventory.find { it.productId == selectedProductId && it.distributorId == selectedDistributorId }?.quantity ?: 0
+    val totalSpend = customerRequests.sumOf { it.totalAmount }
+    val settledSpend = customerRequests.filter { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }.sumOf { it.totalAmount }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.95f),
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f)
+                                )
+                            )
+                        )
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text(
+                            text = "Customer Dashboard",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Request goods on cash or credit without leaving the app.",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Welcome back, ${user?.name ?: "Customer"}",
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
+                        )
+                    }
+                }
+            }
         }
 
-        when (selectedTab) {
-            0 -> {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Agent: ${user?.name}", style = MaterialTheme.typography.titleMedium)
-                    Text("Distributor: $distId", style = MaterialTheme.typography.bodySmall)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Available Inventory", style = MaterialTheme.typography.headlineSmall)
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CustomerMetricCard(
+                    modifier = Modifier.weight(1f),
+                    value = requestCountAnimated.toString(),
+                    title = "Requests",
+                    subtitle = "Submitted"
+                )
+                CustomerMetricCard(
+                    modifier = Modifier.weight(1f),
+                    value = completedRequests.toString(),
+                    title = "Settled",
+                    subtitle = "Closed"
+                )
+                CustomerMetricCard(
+                    modifier = Modifier.weight(1f),
+                    value = String.format(Locale.getDefault(), "%.0f", balanceAnimated),
+                    title = "Credit",
+                    subtitle = "Outstanding"
+                )
+            }
+        }
+
+        // Period totals for Cash and Credit
+        item {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Purchase totals", style = MaterialTheme.typography.labelLarge)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Cash (UGX)", style = MaterialTheme.typography.titleMedium)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        SmallMetric(modifier = Modifier.weight(1f), label = "Day", value = String.format(Locale.getDefault(), "%.0f", cashDay))
+                        SmallMetric(modifier = Modifier.weight(1f), label = "Week", value = String.format(Locale.getDefault(), "%.0f", cashWeek))
+                        SmallMetric(modifier = Modifier.weight(1f), label = "Month", value = String.format(Locale.getDefault(), "%.0f", cashMonth))
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
-                    LazyColumn {
-                        items(products) { product ->
-                            val stock = inventory.find { it.productId == product.id && it.distributorId == distId }?.quantity ?: 0
-                            Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(product.name, style = MaterialTheme.typography.titleMedium)
-                                        Text("Stock: $stock", color = if (stock < 10) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Credit (UGX)", style = MaterialTheme.typography.titleMedium)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        SmallMetric(modifier = Modifier.weight(1f), label = "Day", value = String.format(Locale.getDefault(), "%.0f", creditDay))
+                        SmallMetric(modifier = Modifier.weight(1f), label = "Week", value = String.format(Locale.getDefault(), "%.0f", creditWeek))
+                        SmallMetric(modifier = Modifier.weight(1f), label = "Month", value = String.format(Locale.getDefault(), "%.0f", creditMonth))
+                    }
+                }
+            }
+        }
+
+        item {
+            ElevatedCard(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Create Goods Request", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+
+                    SelectionDropdown(
+                        title = "Product",
+                        options = products.map { it.id to "${it.name} (${it.unit})" },
+                        selectedId = selectedProductId,
+                        onSelect = { selectedProductId = it }
+                    )
+
+                    SelectionDropdown(
+                        title = "Distributor",
+                        options = eligibleDistributors.map { it to when (it) {
+                            "dist1" -> "North Hub"
+                            "dist2" -> "Metro Hub"
+                            else -> it
+                        } },
+                        selectedId = selectedDistributorId,
+                        onSelect = { selectedDistributorId = it }
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = quantityText,
+                            onValueChange = { quantityText = it.filter { char -> char.isDigit() }.take(4) },
+                            label = { Text("Quantity") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            tonalElevation = 1.dp,
+                            modifier = Modifier.align(Alignment.CenterVertically)
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                                Text("Stock", style = MaterialTheme.typography.labelSmall)
+                                Text(availableStock.toString(), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+
+                    PaymentModeSelector(
+                        paymentMethod = paymentMethod,
+                        onPaymentMethodChange = { paymentMethod = it }
+                    )
+
+                    OutlinedTextField(
+                        value = note,
+                        onValueChange = { note = it },
+                        label = { Text("Note") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2
+                    )
+
+                    if (selectedProduct != null) {
+                        val qty = quantityText.toIntOrNull() ?: 0
+                        val requestTotal = qty * selectedProduct.unitPrice
+                        Text(
+                            text = "Estimated total: UGX ${String.format(Locale.getDefault(), "%.0f", requestTotal)} (${qty} x ${selectedProduct.unit})",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (submitMessage != null) {
+                        AssistChip(onClick = { submitMessage = null }, label = { Text(submitMessage ?: "") })
+                    }
+
+                    Button(
+                        onClick = {
+                            val qty = quantityText.toIntOrNull() ?: 0
+                            val success = AppRepository.submitGoodsRequest(
+                                customerId = user?.id.orEmpty(),
+                                customerName = user?.name.orEmpty(),
+                                distributorId = selectedDistributorId,
+                                productId = selectedProductId,
+                                quantity = qty,
+                                paymentMethod = paymentMethod,
+                                note = note
+                            )
+                            submitMessage = if (success) {
+                                note = ""
+                                quantityText = "1"
+                                "Request submitted successfully"
+                            } else {
+                                "Please choose a product, distributor, and quantity"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = selectedProductId.isNotBlank() && selectedDistributorId.isNotBlank()
+                    ) {
+                        Text("Submit Request")
+                    }
+                }
+            }
+        }
+
+        item {
+            ElevatedCard(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Request Activity", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Pending review: $pendingRequests",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Total spend: UGX ${String.format(Locale.getDefault(), "%.0f", totalSpend)} • Settled: UGX ${String.format(Locale.getDefault(), "%.0f", settledSpend)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (customerRequests.isEmpty()) {
+                        Text("Your request history will appear here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        customerRequests.sortedByDescending { it.requestedAt }.forEach { request ->
+                            val productName = products.find { it.id == request.productId }?.name ?: request.productId
+                            val productUnit = products.find { it.id == request.productId }?.unit ?: "unit"
+                            val statusColor = when (request.status) {
+                                com.example.ecomerse.model.GoodsRequestStatus.PENDING -> MaterialTheme.colorScheme.tertiary
+                                com.example.ecomerse.model.GoodsRequestStatus.APPROVED -> MaterialTheme.colorScheme.primary
+                                com.example.ecomerse.model.GoodsRequestStatus.FULFILLED -> Color(0xFF6A1B9A)
+                                com.example.ecomerse.model.GoodsRequestStatus.SETTLED -> Color(0xFF2E7D32)
+                                com.example.ecomerse.model.GoodsRequestStatus.REJECTED -> MaterialTheme.colorScheme.error
+                            }
+
+                            ElevatedCard(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(productName, style = MaterialTheme.typography.titleMedium)
+                                            Text(
+                                                text = "${request.quantity} x ${productUnit} • ${displayDistributorName(request.distributorId)}",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Surface(color = statusColor.copy(alpha = 0.14f), shape = RoundedCornerShape(50)) {
+                                                Text(
+                                                    text = request.status.name.replace("_", " "),
+                                                    color = statusColor,
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(50)) {
+                                                Text(
+                                                    text = request.paymentMethod.name,
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                            }
+                                        }
                                     }
-                                    Button(
-                                        onClick = { AppRepository.recordSale(product.id, distId, user?.id ?: "", 1) },
-                                        enabled = stock > 0
-                                    ) {
-                                        Text("Record Sale")
+
+                                    Text(
+                                        text = "Amount: UGX ${String.format(Locale.getDefault(), "%.0f", request.totalAmount)}",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+
+                                    request.note.takeIf { it.isNotBlank() }?.let {
+                                        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                                    }
+
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(request.requestedAt)),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+
+                                        if (request.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && request.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED) {
+                                            TextButton(onClick = { AppRepository.settleCreditRequest(request.id, user?.id.orEmpty()) }) {
+                                                Text("Settle now")
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -486,13 +852,6 @@ fun SalesAgentScreen() {
                     }
                 }
             }
-
-            1 -> RoleChatHost(
-                modifier = Modifier.fillMaxSize(),
-                chatViewModel = chatViewModel,
-                activeThreadId = chatThreadId,
-                onThreadChange = { chatThreadId = it }
-            )
         }
     }
 }
@@ -503,9 +862,11 @@ fun DistributorInventoryScreen() {
     val inventory by AppRepository.inventory.collectAsState()
     val products by AppRepository.products.collectAsState()
     val sales by AppRepository.sales.collectAsState()
+    val requests by AppRepository.goodsRequests.collectAsState()
 
     val distInventory = inventory.filter { it.distributorId == user?.distributorId }
     val distributorSales = sales.filter { it.distributorId == user?.distributorId }
+    val distributorRequests = requests.filter { it.distributorId == user?.distributorId }
     val totalUnits = distInventory.sumOf { it.quantity }
     val lowStockCount = distInventory.count { it.quantity < 10 }
     val weeklyUnits = distributorSales
@@ -594,11 +955,11 @@ fun DistributorInventoryScreen() {
                     }
                 )
 
-                DistributorBottomTab.SHIPMENTS -> DistributorSalesTabContent(
+                DistributorBottomTab.SHIPMENTS -> DistributorRequestsTabContent(
                     modifier = contentModifier,
                     distributorId = user?.distributorId,
-                    salesCount = sales.size,
-                    sales = sales,
+                    requestsCount = distributorRequests.size,
+                    requests = distributorRequests,
                     products = products
                 )
 
@@ -788,13 +1149,13 @@ private fun DistributorInventoryTabContent(
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text((product?.name ?: "?").take(1), color = stockColor, style = MaterialTheme.typography.titleMedium)
+                                                    Text((product?.name ?: "?").take(1).uppercase(), color = stockColor, style = MaterialTheme.typography.titleMedium)
                                 }
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(product?.name ?: "Unknown Product", style = MaterialTheme.typography.titleMedium)
-                                Text("Stock: ${item.quantity}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Text(product?.name ?: "Unknown Product", style = MaterialTheme.typography.titleMedium)
+                                                Text("${product?.unit ?: "units"} • Stock: ${item.quantity}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                             }
                             TextButton(onClick = { onRestockClick(item.productId) }) { Text("Restock") }
                         }
@@ -824,16 +1185,17 @@ private fun DistributorInventoryTabContent(
 }
 
 @Composable
-private fun DistributorSalesTabContent(
+private fun DistributorRequestsTabContent(
     modifier: Modifier = Modifier,
     distributorId: String?,
-    salesCount: Int,
-    sales: List<com.example.ecomerse.model.Sale>,
+    requestsCount: Int,
+    requests: List<com.example.ecomerse.model.GoodsRequest>,
     products: List<com.example.ecomerse.model.Product>
 ) {
-    val distributorSales = sales.filter { it.distributorId == distributorId }
-    val totalUnits = distributorSales.sumOf { it.quantity }
-    val activeAgents = distributorSales.map { it.agentId }.distinct().size
+    val pendingRequests = requests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING }
+    val cashRequests = requests.count { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CASH }
+    val creditRequests = requests.count { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT }
+    val totalUnits = requests.sumOf { it.quantity }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -845,8 +1207,8 @@ private fun DistributorSalesTabContent(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Customer Requests", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Sales pipeline overview", style = MaterialTheme.typography.headlineSmall)
-                    Text("Showing ${distributorSales.size} of $salesCount total records", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Cash and credit request queue", style = MaterialTheme.typography.headlineSmall)
+                    Text("Showing ${requests.size} requests for ${distributorId ?: "this hub"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -855,53 +1217,87 @@ private fun DistributorSalesTabContent(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 DistributorMetricCard(
                     modifier = Modifier.weight(1f),
-                    value = distributorSales.size.toString(),
+                    value = requestsCount.toString(),
                     title = "Requests",
                     subtitle = "Total"
                 )
                 DistributorMetricCard(
                     modifier = Modifier.weight(1f),
-                    value = totalUnits.toString(),
-                    title = "Units",
-                    subtitle = "Sold"
+                    value = pendingRequests.toString(),
+                    title = "Pending",
+                    subtitle = "Needs action"
                 )
                 DistributorMetricCard(
                     modifier = Modifier.weight(1f),
-                    value = activeAgents.toString(),
-                    title = "Agents",
-                    subtitle = "Active"
+                    value = totalUnits.toString(),
+                    title = "Units",
+                    subtitle = "Requested"
                 )
             }
         }
 
-        if (distributorSales.isEmpty()) {
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CustomerMetricCard(
+                    modifier = Modifier.weight(1f),
+                    value = cashRequests.toString(),
+                    title = "Cash",
+                    subtitle = "Requests"
+                )
+                CustomerMetricCard(
+                    modifier = Modifier.weight(1f),
+                    value = creditRequests.toString(),
+                    title = "Credit",
+                    subtitle = "Requests"
+                )
+            }
+        }
+
+        if (requests.isEmpty()) {
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        "No customer requests yet. Sales activity will appear here in real time.",
+                        "No customer requests yet. New cash or credit requests will appear here in real time.",
                         modifier = Modifier.padding(16.dp)
                     )
                 }
             }
         } else {
-            items(distributorSales.reversed(), key = { it.id }) { sale ->
-                val productName = products.find { it.id == sale.productId }?.name ?: "Product"
+            items(requests.reversed(), key = { it.id }) { request ->
+                val productName = products.find { it.id == request.productId }?.name ?: "Product"
+                val productUnit = products.find { it.id == request.productId }?.unit ?: "unit"
                 ElevatedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(productName, style = MaterialTheme.typography.titleMedium)
-                            Text("Qty: ${sale.quantity} | Agent: ${sale.agentId}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(productName, style = MaterialTheme.typography.titleMedium)
+                                Text("${request.quantity}x ${productUnit} | ${request.customerName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(
+                                text = SimpleDateFormat("MMM dd\nHH:mm", Locale.getDefault()).format(Date(request.requestedAt)),
+                                style = MaterialTheme.typography.labelSmall,
+                                textAlign = TextAlign.End,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
-                        Text(
-                            text = SimpleDateFormat("MMM dd\nHH:mm", Locale.getDefault()).format(Date(sale.timestamp)),
-                            style = MaterialTheme.typography.labelSmall,
-                            textAlign = TextAlign.End,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+
+                        Text("Amount: UGX ${String.format(Locale.getDefault(), "%.0f", request.totalAmount)} • ${request.paymentMethod.name}")
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (request.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING) {
+                                TextButton(onClick = { AppRepository.rejectGoodsRequest(request.id, distributorId.orEmpty()) }) { Text("Reject") }
+                                Button(onClick = { AppRepository.approveGoodsRequest(request.id, distributorId.orEmpty()) }) { Text("Approve") }
+                            }
+                            if (request.status != com.example.ecomerse.model.GoodsRequestStatus.REJECTED && request.status != com.example.ecomerse.model.GoodsRequestStatus.SETTLED) {
+                                OutlinedButton(onClick = { AppRepository.fulfillGoodsRequest(request.id, distributorId.orEmpty()) }) {
+                                    Text(if (request.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT) "Fulfill credit" else "Mark paid")
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1029,6 +1425,108 @@ private fun DistributorMetricCard(
 }
 
 @Composable
+private fun CustomerMetricCard(
+    modifier: Modifier = Modifier,
+    value: String,
+    title: String,
+    subtitle: String
+) {
+    ElevatedCard(modifier = modifier, shape = RoundedCornerShape(16.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(value, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.secondary)
+            Text(title, style = MaterialTheme.typography.labelMedium)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SmallMetric(modifier: Modifier = Modifier, label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(shape = RoundedCornerShape(8.dp), tonalElevation = 2.dp, modifier = Modifier.padding(top = 6.dp)) {
+            Text("UGX $value", modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun PaymentModeSelector(
+    paymentMethod: com.example.ecomerse.model.PaymentMethod,
+    onPaymentMethodChange: (com.example.ecomerse.model.PaymentMethod) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Payment method", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = paymentMethod == com.example.ecomerse.model.PaymentMethod.CASH,
+                onClick = { onPaymentMethodChange(com.example.ecomerse.model.PaymentMethod.CASH) },
+                label = { Text("Cash") }
+            )
+            FilterChip(
+                selected = paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT,
+                onClick = { onPaymentMethodChange(com.example.ecomerse.model.PaymentMethod.CREDIT) },
+                label = { Text("Credit") }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionDropdown(
+    title: String,
+    options: List<Pair<String, String>>,
+    selectedId: String,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selectedId }?.second ?: "Choose one"
+
+    // Use ExposedDropdownMenuBox to properly anchor the dropdown to the text field
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = selectedLabel,
+            onValueChange = {},
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth(),
+            label = { Text(title) },
+            readOnly = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            singleLine = true
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { (id, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        onSelect(id)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+private fun displayDistributorName(distributorId: String): String = when (distributorId) {
+    "dist1" -> "North Hub"
+    "dist2" -> "Metro Hub"
+    else -> distributorId
+}
+
+@Composable
 private fun DistributorPlaceholderTab(modifier: Modifier = Modifier, title: String, subtitle: String) {
     Box(modifier = modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1097,13 +1595,12 @@ fun DashboardScreen() {
             0 -> {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                        Column(modifier = Modifier.padding(24.dp)) {
-                            Text("Real-time Revenue", style = MaterialTheme.typography.labelLarge)
-                            val revenueFormatted = String.format(Locale.getDefault(), "%.2f", totalRevenue)
-                            Text(
-                                text = "${'$'}$revenueFormatted",
-                                style = MaterialTheme.typography.headlineLarge
-                            )
+                         Column(modifier = Modifier.padding(24.dp)) {
+                             Text("Real-time Revenue", style = MaterialTheme.typography.labelLarge)
+                             Text(
+                                 text = "UGX ${String.format(Locale.getDefault(), "%.0f", totalRevenue)}",
+                                 style = MaterialTheme.typography.headlineLarge
+                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("Total Sales: ${sales.size}", style = MaterialTheme.typography.bodyMedium)
                         }
@@ -1115,7 +1612,7 @@ fun DashboardScreen() {
                             val productName = products.find { it.id == sale.productId }?.name ?: "Product"
                             ListItem(
                                 headlineContent = { Text("$productName (x${sale.quantity})") },
-                                supportingContent = { Text("Agent: ${sale.agentId} | Dist: ${sale.distributorId}") },
+                                supportingContent = { Text("Handled by: ${sale.handledByUserId} | Dist: ${sale.distributorId}") },
                                 trailingContent = { Text(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(sale.timestamp))) }
                             )
                         }
