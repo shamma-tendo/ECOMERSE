@@ -59,7 +59,7 @@ object AppRepository {
         db.collection("activityLogs").orderBy("timestamp", Query.Direction.DESCENDING).limit(100).addSnapshotListener { snapshot, _ ->
             snapshot?.toObjects(ActivityLog::class.java)?.let { _activityLogs.value = it }
         }
-        db.collection("users").whereIn("role", listOf(UserRole.DISTRIBUTOR.name, UserRole.COMPANY_MANAGER.name)).addSnapshotListener { snapshot, _ ->
+        db.collection("users").whereEqualTo("role", UserRole.DISTRIBUTOR.name).addSnapshotListener { snapshot, _ ->
             snapshot?.toObjects(User::class.java)?.let { _employees.value = it }
         }
         db.collection("leaveRequests").addSnapshotListener { snapshot, _ ->
@@ -99,19 +99,10 @@ object AppRepository {
         )
         initialInventory.forEach { db.collection("inventory").document("${it.distributorId}_${it.productId}").set(it) }
 
-        val initialEmployees = listOf(
-            User("dist_staff_1", "Grace Namara", UserRole.DISTRIBUTOR, "dist1", "grace@ecomerse.com", "Distribution Lead"),
-            User("dist_staff_2", "Peter Ouma", UserRole.DISTRIBUTOR, "dist2", "peter@ecomerse.com", "Warehouse Coordinator")
-        )
-        initialEmployees.forEach { db.collection("users").document(it.id).set(it) }
-
         val initialLeaves = listOf(
-            LeaveRequest("L1", "agent_001", "Alice Smith", "2023-12-01", "2023-12-05", "Vacation"),
-            LeaveRequest("L2", "agent_002", "Charlie Brown", "2023-12-10", "2023-12-11", "Medical")
+            LeaveRequest("L1", "admin_001", "Initial Admin", "2023-12-01", "2023-12-05", "Vacation")
         )
         initialLeaves.forEach { db.collection("leaveRequests").document(it.id).set(it) }
-        
-        SessionManager.seedDefaultAccountsToFirebase()
     }
 
     fun updateLeaveStatus(requestId: String, status: LeaveStatus) {
@@ -273,10 +264,15 @@ object SessionManager {
         auth.addAuthStateListener { firebaseAuth ->
             val firebaseUser = firebaseAuth.currentUser
             if (firebaseUser != null) {
-                db.collection("users").document(firebaseUser.uid).get().addOnSuccessListener { doc ->
-                    val user = doc.toObject(User::class.java)
-                    _currentUser.value = user
-                }
+                db.collection("users").document(firebaseUser.uid).get()
+                    .addOnSuccessListener { doc ->
+                        val user = doc.toObject(User::class.java)
+                        _currentUser.value = user
+                    }
+                    .addOnFailureListener { e ->
+                        android.util.Log.e("SessionManager", "Firestore error: ${e.message}")
+                        _currentUser.value = null
+                    }
             } else {
                 _currentUser.value = null
             }
@@ -332,7 +328,12 @@ object SessionManager {
                         email = email.trim().lowercase(Locale.ROOT)
                     )
                     db.collection("users").document(uid).set(user)
-                    onResult(true, null)
+                        .addOnSuccessListener {
+                            onResult(true, null)
+                        }
+                        .addOnFailureListener { e ->
+                            onResult(false, "Profile creation failed: ${e.localizedMessage}")
+                        }
                 } else {
                     onResult(false, task.exception?.localizedMessage ?: "Registration failed")
                 }
@@ -350,12 +351,7 @@ object SessionManager {
     }
 
     fun seedDefaultAccountsToFirebase() {
-        // Firebase Auth users must be created via createUserWithEmailAndPassword.
-        // This seeding is for the Firestore profile matching.
-        // For a real app, you'd manually create these 3 users in Firebase Console first.
-        seedAccount("customer@ecomerse.com", "pass1234", User("cust_001", "Customer Demo", UserRole.CUSTOMER))
-        seedAccount("distributor@ecomerse.com", "pass1234", User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1"))
-        seedAccount("manager@ecomerse.com", "pass1234", User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER))
+        // No longer seeding demo accounts
     }
 
     private fun seedAccount(email: String, password: String, user: User) {

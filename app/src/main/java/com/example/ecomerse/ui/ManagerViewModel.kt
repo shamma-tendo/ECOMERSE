@@ -30,8 +30,8 @@ class ManagerViewModel : ViewModel() {
     }
 
     private fun observeData() {
-        // Observe Sales and Products for reports
-        AppRepository.sales.combine(AppRepository.products) { sales, products ->
+        // Observe Sales, Products, and Users for reports
+        combine(AppRepository.sales, AppRepository.products, AppRepository.allUsers) { sales, products, users ->
             sales
                 .groupBy { it.distributorId }
                 .map { (distributorId, distributorSales) ->
@@ -40,11 +40,8 @@ class ManagerViewModel : ViewModel() {
                         (product?.unitPrice ?: 0.0) * sale.quantity
                     }
 
-                    val distributorName = when (distributorId) {
-                        "dist1" -> "North Hub"
-                        "dist2" -> "Metro Hub"
-                        else -> distributorId
-                    }
+                    val distributor = users.find { it.role == UserRole.DISTRIBUTOR && it.distributorId == distributorId }
+                    val distributorName = distributor?.name ?: distributorId
 
                     DistributorSalesReport(
                         distributorId = distributorId,

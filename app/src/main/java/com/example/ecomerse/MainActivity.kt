@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.example.ecomerse.data.AppRepository
 import com.example.ecomerse.data.SessionManager
 import com.example.ecomerse.model.UserRole
 import com.example.ecomerse.ui.*
@@ -26,7 +27,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         // Push data to Firebase (Run once, then you can remove this line)
-        com.example.ecomerse.data.AppRepository.seedDataToFirebase()
+        AppRepository.seedDataToFirebase()
 
         setContent {
             val systemTheme = isSystemInDarkTheme()
@@ -97,8 +98,10 @@ fun MainContent(isDarkMode: Boolean, onToggleTheme: () -> Unit) {
                     LaunchedEffect(Unit) { currentScreen = ScreenState.LANDING }
 
                     when (user.role) {
-                        UserRole.CUSTOMER -> com.example.ecomerse.ui.CustomerDashboardScreen()
-                        UserRole.DISTRIBUTOR -> DistributorInventoryScreen()
+                        UserRole.CUSTOMER -> CustomerDashboardScreen()
+                        UserRole.DISTRIBUTOR ->
+                                    TODO()
+
                         UserRole.COMPANY_MANAGER -> CompanyManagerDashboard()
                     }
                 }

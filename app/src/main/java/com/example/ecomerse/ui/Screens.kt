@@ -1,32 +1,82 @@
 package com.example.ecomerse.ui
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+//import androidx.compose.material3.ExposedDropdownMenuBoxScope.menuAnchor
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -34,12 +84,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import com.example.ecomerse.data.AppRepository
 import com.example.ecomerse.data.ChatRepositoryProvider
 import com.example.ecomerse.data.SessionManager
@@ -48,9 +101,12 @@ import com.example.ecomerse.model.UserRole
 import com.example.ecomerse.ui.chat.ChatConversationScreen
 import com.example.ecomerse.ui.chat.ChatThreadListScreen
 import com.example.ecomerse.ui.chat.ChatViewModel
-import com.example.ecomerse.ui.theme.*
+import com.example.ecomerse.ui.theme.CyanPrimary
+import com.example.ecomerse.ui.theme.OrangeAccent
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -246,6 +302,30 @@ fun SignUpScreen(onBack: () -> Unit) {
             singleLine = true
         )
 
+        var selectedRole by remember { mutableStateOf(UserRole.CUSTOMER) }
+        var distributorId by remember { mutableStateOf("") }
+
+        SelectionDropdown(
+            title = "Account Type",
+            options = listOf(
+                UserRole.CUSTOMER.name to "Customer",
+                UserRole.DISTRIBUTOR.name to "Distributor",
+                UserRole.COMPANY_MANAGER.name to "Company Manager"
+            ),
+            selectedId = selectedRole.name,
+            onSelect = { selectedRole = UserRole.valueOf(it) }
+        )
+
+        if (selectedRole == UserRole.DISTRIBUTOR) {
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = distributorId,
+                onValueChange = { distributorId = it },
+                label = { Text("Distributor ID (e.g. dist1)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
         Spacer(modifier = Modifier.height(32.dp))
 
         if (errorMessage != null) {
@@ -264,10 +344,13 @@ fun SignUpScreen(onBack: () -> Unit) {
                     name = name,
                     email = email,
                     password = password,
-                    role = UserRole.CUSTOMER
+                    role = selectedRole,
+                    distributorId = if (selectedRole == UserRole.DISTRIBUTOR) distributorId else null
                 ) { success, error ->
                     if (!success) {
                         errorMessage = error
+                    } else {
+                        onBack() // Go back to log in after successful registration
                     }
                 }
             },
@@ -379,61 +462,14 @@ fun LoginScreen(onBack: () -> Unit) {
             Text("LOG IN", fontWeight = FontWeight.Bold)
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Demo Credentials",
-            style = MaterialTheme.typography.labelMedium,
-            color = primaryColor.copy(alpha = 0.7f)
-        )
-        SessionManager.demoCredentials().forEach { (demoEmail, demoPassword) ->
-            Text(
-                text = "$demoEmail / $demoPassword",
-                style = MaterialTheme.typography.bodySmall,
-                color = primaryColor.copy(alpha = 0.6f),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        HorizontalDivider(color = primaryColor.copy(alpha = 0.2f))
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        Text("Quick Access Demo Roles", style = MaterialTheme.typography.labelSmall, color = primaryColor.copy(alpha = 0.5f))
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            UserRole.entries.forEach { role ->
-                IconButton(onClick = { SessionManager.login(role) }) {
-                    val iconText = role.name.take(1)
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = primaryColor.copy(alpha = 0.1f),
-                        border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.3f))
-                    ) {
-                        Text(
-                            iconText, 
-                            modifier = Modifier.padding(4.dp), 
-                            color = primaryColor,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         TextButton(onClick = onBack) {
             Text("Back to Landing", color = primaryColor.copy(alpha = 0.6f))
         }
+        }
     }
-}
+
 
 @Composable
 fun CustomerDashboardScreen() {
@@ -451,6 +487,24 @@ fun CustomerDashboardScreen() {
         )
     )
 
+    val context = LocalContext.current
+    var backPressedTime by remember { mutableLongStateOf(0L) }
+
+    BackHandler {
+        if (chatThreadId != null) {
+            chatThreadId = null
+        } else if (selectedTab != CustomerBottomTab.HOME) {
+            selectedTab = CustomerBottomTab.HOME
+        } else {
+            if (System.currentTimeMillis() - backPressedTime < 2000) {
+                SessionManager.logout()
+            } else {
+                Toast.makeText(context, "Tap again to exit", Toast.LENGTH_SHORT).show()
+                backPressedTime = System.currentTimeMillis()
+            }
+        }
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -465,14 +519,31 @@ fun CustomerDashboardScreen() {
             }
         }
     ) { innerPadding ->
-        Crossfade(targetState = selectedTab, modifier = Modifier.padding(innerPadding)) { tab ->
+        val contentModifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
+            .fillMaxSize()
+
+        Crossfade(targetState = selectedTab, label = "customer-tab") { tab ->
             when (tab) {
-                CustomerBottomTab.HOME -> CustomerHomeContent(user, products, inventory, requests)
+                CustomerBottomTab.HOME -> CustomerHomeContent(
+                    modifier = contentModifier,
+                    user = user,
+                    products = products,
+                    inventory = inventory,
+                    requests = requests
+                )
                 CustomerBottomTab.CHAT -> RoleChatHost(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = contentModifier,
                     chatViewModel = chatViewModel,
                     activeThreadId = chatThreadId,
                     onThreadChange = { chatThreadId = it }
+                )
+                CustomerBottomTab.ACTIVITY -> CustomerActivityContent(
+                    modifier = contentModifier,
+                    user = user,
+                    products = products,
+                    requests = requests
                 )
             }
         }
@@ -481,11 +552,13 @@ fun CustomerDashboardScreen() {
 
 private enum class CustomerBottomTab(val title: String, val icon: ImageVector) {
     HOME("Home", Icons.Default.Home),
-    CHAT("Chat", Icons.AutoMirrored.Filled.Chat)
+    CHAT("Chat", Icons.AutoMirrored.Filled.Chat),
+    ACTIVITY("Activity", Icons.Default.History)
 }
 
 @Composable
 private fun CustomerHomeContent(
+    modifier: Modifier = Modifier,
     user: User?,
     products: List<com.example.ecomerse.model.Product>,
     inventory: List<com.example.ecomerse.model.InventoryItem>,
@@ -548,6 +621,15 @@ private fun CustomerHomeContent(
     var paymentMethod by remember { mutableStateOf(com.example.ecomerse.model.PaymentMethod.CASH) }
     var submitMessage by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(submitMessage) {
+        if (submitMessage == "Request submitted successfully") {
+            delay(20000)
+            submitMessage = null
+            quantityText = "1"
+            note = ""
+        }
+    }
+
     LaunchedEffect(products, distinctDistributors) {
         if (selectedProductId.isBlank()) {
             selectedProductId = products.firstOrNull()?.id.orEmpty()
@@ -575,7 +657,7 @@ private fun CustomerHomeContent(
     val settledSpend = customerRequests.filter { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }.sumOf { it.totalAmount }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier,
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -748,8 +830,6 @@ private fun CustomerHomeContent(
                                 note = note
                             )
                             submitMessage = if (success) {
-                                note = ""
-                                quantityText = "1"
                                 "Request submitted successfully"
                             } else {
                                 "Please choose a product, distributor, and quantity"
@@ -763,7 +843,26 @@ private fun CustomerHomeContent(
                 }
             }
         }
+    }
+}
 
+@Composable
+private fun CustomerActivityContent(
+    modifier: Modifier = Modifier,
+    user: com.example.ecomerse.model.User?,
+    products: List<com.example.ecomerse.model.Product>,
+    requests: List<com.example.ecomerse.model.GoodsRequest>
+) {
+    val customerRequests = requests.filter { it.customerId == user?.id }
+    val pendingRequests = customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING || it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED }
+    val totalSpend = customerRequests.sumOf { it.totalAmount }
+    val settledSpend = customerRequests.filter { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }.sumOf { it.totalAmount }
+
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         item {
             ElevatedCard(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -799,7 +898,7 @@ private fun CustomerHomeContent(
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(productName, style = MaterialTheme.typography.titleMedium)
                                             Text(
-                                                text = "${request.quantity} x ${productUnit} • ${displayDistributorName(request.distributorId)}",
+                                                text = "${request.quantity} x $productUnit • ${displayDistributorName(request.distributorId)}",
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 style = MaterialTheme.typography.bodySmall
                                             )
@@ -884,6 +983,24 @@ fun DistributorInventoryScreen() {
         )
     )
 
+    val context = LocalContext.current
+    var backPressedTime by remember { mutableLongStateOf(0L) }
+
+    BackHandler {
+        if (chatThreadId != null) {
+            chatThreadId = null
+        } else if (selectedTab != DistributorBottomTab.INVENTORY) {
+            selectedTab = DistributorBottomTab.INVENTORY
+        } else {
+            if (System.currentTimeMillis() - backPressedTime < 2000) {
+                SessionManager.logout()
+            } else {
+                Toast.makeText(context, "Tap again to exit", Toast.LENGTH_SHORT).show()
+                backPressedTime = System.currentTimeMillis()
+            }
+        }
+    }
+
     Scaffold(
         bottomBar = {
             Box(
@@ -916,8 +1033,7 @@ fun DistributorInventoryScreen() {
                                         contentDescription = tab.title,
                                         modifier = Modifier.size(23.dp)
                                     )
-                                },
-                                label = {
+                                }, label = {
                                     Text(
                                         text = tab.title,
                                         fontSize = 10.sp,
@@ -925,8 +1041,7 @@ fun DistributorInventoryScreen() {
                                         textAlign = TextAlign.Center,
                                         maxLines = 2
                                     )
-                                }
-                            )
+                                })
                         }
                     }
                 }
@@ -1023,7 +1138,7 @@ fun DistributorInventoryScreen() {
     }
 }
 
-private enum class DistributorBottomTab(val title: String, val icon: ImageVector) {
+enum class DistributorBottomTab(val title: String, val icon: ImageVector) {
     INVENTORY("Home", Icons.Default.Home),
     SHIPMENTS("Customer Requests", Icons.Default.LocalShipping),
     CATALOG("Orders", Icons.Default.Inventory2),
@@ -1107,7 +1222,7 @@ private fun DistributorInventoryTabContent(
 
         item {
             Text(
-                text = "${animatedWeeklyUnits} units moved in the last 7 days",
+                text = "$animatedWeeklyUnits units moved in the last 7 days",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1275,7 +1390,7 @@ private fun DistributorRequestsTabContent(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(productName, style = MaterialTheme.typography.titleMedium)
-                                Text("${request.quantity}x ${productUnit} | ${request.customerName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${request.quantity}x $productUnit | ${request.customerName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Text(
                                 text = SimpleDateFormat("MMM dd\nHH:mm", Locale.getDefault()).format(Date(request.requestedAt)),
@@ -1562,84 +1677,6 @@ fun RestockDialog(productId: String, onDismiss: () -> Unit, onConfirm: (Int) -> 
             }
         }
     )
-}
-
-@Composable
-fun DashboardScreen() {
-    val sales by AppRepository.sales.collectAsState()
-    val logs by AppRepository.activityLogs.collectAsState()
-    val products by AppRepository.products.collectAsState()
-    val chatViewModel: ChatViewModel = viewModel(
-        factory = ChatViewModel.factory(
-            chatRepository = ChatRepositoryProvider.repository,
-            sessionManager = SessionManager
-        )
-    )
-    var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
-
-    val totalRevenue = sales.sumOf { sale -> 
-        val product = products.find { it.id == sale.productId }
-        (product?.unitPrice ?: 0.0) * sale.quantity
-    }
-
-    var selectedTab by remember { mutableIntStateOf(0) }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = selectedTab) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Performance") })
-            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Audit Logs") })
-            Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Chat") })
-        }
-
-        when (selectedTab) {
-            0 -> {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                         Column(modifier = Modifier.padding(24.dp)) {
-                             Text("Real-time Revenue", style = MaterialTheme.typography.labelLarge)
-                             Text(
-                                 text = "UGX ${String.format(Locale.getDefault(), "%.0f", totalRevenue)}",
-                                 style = MaterialTheme.typography.headlineLarge
-                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Total Sales: ${sales.size}", style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Live Sales Feed", style = MaterialTheme.typography.titleLarge)
-                    LazyColumn {
-                        items(sales.reversed()) { sale ->
-                            val productName = products.find { it.id == sale.productId }?.name ?: "Product"
-                            ListItem(
-                                headlineContent = { Text("$productName (x${sale.quantity})") },
-                                supportingContent = { Text("Handled by: ${sale.handledByUserId} | Dist: ${sale.distributorId}") },
-                                trailingContent = { Text(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(sale.timestamp))) }
-                            )
-                        }
-                    }
-                }
-            }
-            1 -> {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(logs.reversed()) { log ->
-                        ListItem(
-                            headlineContent = { Text(log.action) },
-                            supportingContent = { Text("UserID: ${log.userId}") },
-                            trailingContent = { Text(SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(log.timestamp))) }
-                        )
-                        HorizontalDivider()
-                    }
-                }
-            }
-
-            2 -> RoleChatHost(
-                modifier = Modifier.fillMaxSize(),
-                chatViewModel = chatViewModel,
-                activeThreadId = chatThreadId,
-                onThreadChange = { chatThreadId = it }
-            )
-        }
-    }
 }
 
 @Composable

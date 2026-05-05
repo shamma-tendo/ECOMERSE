@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import com.example.ecomerse.data.ChatRepositoryProvider
 import com.example.ecomerse.data.SessionManager
 import com.example.ecomerse.model.*
@@ -38,11 +40,22 @@ fun CompanyManagerDashboard(
     val uiState by viewModel.uiState.collectAsState()
     var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // Navigation logic: Back button returns to Home (Tab 0) or clears active chat thread
-    if (chatThreadId != null) {
-        BackHandler { chatThreadId = null }
-    } else if (selectedTab != 0) {
-        BackHandler { selectedTab = 0 }
+    val context = LocalContext.current
+    var backPressedTime by remember { mutableLongStateOf(0L) }
+
+    BackHandler {
+        if (chatThreadId != null) {
+            chatThreadId = null
+        } else if (selectedTab != 0) {
+            selectedTab = 0
+        } else {
+            if (System.currentTimeMillis() - backPressedTime < 2000) {
+                SessionManager.logout()
+            } else {
+                Toast.makeText(context, "Tap again to exit", Toast.LENGTH_SHORT).show()
+                backPressedTime = System.currentTimeMillis()
+            }
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -127,7 +140,7 @@ fun DistributorSalesPerformanceScreen(state: ManagerUiState) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("Revenue", style = MaterialTheme.typography.labelSmall)
                                 val revenueStr = String.format(Locale.getDefault(), "%.0f", report.totalRevenue)
-                                Text("UGX ${revenueStr}", style = MaterialTheme.typography.titleLarge, color = Color(0xFF4CAF50))
+                                Text("UGX $revenueStr", style = MaterialTheme.typography.titleLarge, color = Color(0xFF4CAF50))
                             }
                         }
                         
