@@ -15,7 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ecomerse.data.ChatRepositoryProvider
 import com.example.ecomerse.data.SessionManager
@@ -34,33 +36,73 @@ fun CompanyManagerDashboard(
         )
     )
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableStateOf(ManagerBottomTab.HOME) }
     val uiState by viewModel.uiState.collectAsState()
     var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // Navigation logic: Back button returns to Home (Tab 0) or clears active chat thread
+    // Navigation logic: Back button returns to Home or clears active chat thread
     if (chatThreadId != null) {
         BackHandler { chatThreadId = null }
-    } else if (selectedTab != 0) {
-        BackHandler { selectedTab = 0 }
+    } else if (selectedTab != ManagerBottomTab.HOME) {
+        BackHandler { selectedTab = ManagerBottomTab.HOME }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = selectedTab) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, icon = { Icon(Icons.Default.Home, null) }, text = { Text("Home") })
-            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, icon = { Icon(Icons.Default.People, null) }, text = { Text("Staff") })
-            Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, icon = { Icon(Icons.Default.Task, null) }, text = { Text("Approvals") })
-            Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, icon = { Icon(Icons.Default.Assessment, null) }, text = { Text("Reports") })
-            Tab(selected = selectedTab == 4, onClick = { selectedTab = 4 }, icon = { Icon(Icons.AutoMirrored.Filled.Chat, null) }, text = { Text("Chat") })
+    Scaffold(
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
+                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 0.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
+                    tonalElevation = 2.dp,
+                    shadowElevation = 8.dp
+                ) {
+                    NavigationBar(
+                        modifier = Modifier.height(84.dp),
+                        containerColor = Color.Transparent,
+                        tonalElevation = 0.dp,
+                        windowInsets = WindowInsets(0, 0, 0, 0)
+                    ) {
+                        ManagerBottomTab.entries.forEach { tab ->
+                            NavigationBarItem(
+                                selected = selectedTab == tab,
+                                onClick = { selectedTab = tab },
+                                icon = {
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = tab.title,
+                                        modifier = Modifier.size(23.dp)
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = tab.title,
+                                        fontSize = 10.sp,
+                                        lineHeight = 12.sp,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
-
-        Box(modifier = Modifier.weight(1f)) {
+    ) { innerPadding ->
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when (selectedTab) {
-                0 -> ManagerHomeScreen(uiState, onNavigate = { selectedTab = it })
-                1 -> EmployeeManagementScreen(uiState, viewModel)
-                2 -> ApprovalsScreen(uiState, viewModel)
-                3 -> DistributorSalesPerformanceScreen(uiState)
-                4 -> RoleChatHost(
+                ManagerBottomTab.HOME -> ManagerHomeScreen(uiState, onNavigate = { selectedTab = it })
+                ManagerBottomTab.STAFF -> EmployeeManagementScreen(uiState, viewModel)
+                ManagerBottomTab.APPROVALS -> ApprovalsScreen(uiState, viewModel)
+                ManagerBottomTab.REPORTS -> DistributorSalesPerformanceScreen(uiState)
+                ManagerBottomTab.CHAT -> RoleChatHost(
                     modifier = Modifier.fillMaxSize(),
                     chatViewModel = chatViewModel,
                     activeThreadId = chatThreadId,
@@ -72,7 +114,7 @@ fun CompanyManagerDashboard(
 }
 
 @Composable
-fun ManagerHomeScreen(state: ManagerUiState, onNavigate: (Int) -> Unit) {
+private fun ManagerHomeScreen(state: ManagerUiState, onNavigate: (ManagerBottomTab) -> Unit) {
     Column(modifier = Modifier.padding(16.dp)) {
         Text("Company Overview", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
@@ -82,13 +124,13 @@ fun ManagerHomeScreen(state: ManagerUiState, onNavigate: (Int) -> Unit) {
                 title = "Employees", 
                 value = state.employees.size.toString(), 
                 modifier = Modifier.weight(1f),
-                onClick = { onNavigate(1) }
+                onClick = { onNavigate(ManagerBottomTab.STAFF) }
             )
             DashboardCard(
                 title = "Pending Leaves", 
                 value = state.leaveRequests.count { it.status == LeaveStatus.PENDING }.toString(), 
                 modifier = Modifier.weight(1f),
-                onClick = { onNavigate(2) }
+                onClick = { onNavigate(ManagerBottomTab.APPROVALS) }
             )
         }
         
@@ -99,9 +141,17 @@ fun ManagerHomeScreen(state: ManagerUiState, onNavigate: (Int) -> Unit) {
             title = "Overall Sales Report", 
             value = "$totalSales Units", 
             modifier = Modifier.fillMaxWidth(),
-            onClick = { onNavigate(3) }
+            onClick = { onNavigate(ManagerBottomTab.REPORTS) }
         )
     }
+}
+
+private enum class ManagerBottomTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    HOME("Home", Icons.Default.Home),
+    STAFF("Staff", Icons.Default.People),
+    APPROVALS("Approvals", Icons.Default.Task),
+    REPORTS("Reports", Icons.Default.Assessment),
+    CHAT("Chat", Icons.AutoMirrored.Filled.Chat)
 }
 
 @Composable

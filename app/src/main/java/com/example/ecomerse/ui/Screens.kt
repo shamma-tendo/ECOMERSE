@@ -439,17 +439,301 @@ fun CustomerDashboardScreen() {
     val inventory by AppRepository.inventory.collectAsState()
     val requests by AppRepository.goodsRequests.collectAsState()
 
+    var selectedTab by rememberSaveable { mutableStateOf(CustomerBottomTab.HOME) }
+    var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
+    
+    val chatViewModel: ChatViewModel = viewModel(
+        factory = ChatViewModel.factory(
+            chatRepository = ChatRepositoryProvider.repository,
+            sessionManager = SessionManager
+        )
+    )
+
+    Scaffold(
+        bottomBar = {
+            if (selectedTab != CustomerBottomTab.CHAT || chatThreadId == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
+                        .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 0.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
+                        tonalElevation = 2.dp,
+                        shadowElevation = 8.dp
+                    ) {
+                        NavigationBar(
+                            modifier = Modifier.height(84.dp),
+                            containerColor = Color.Transparent,
+                            tonalElevation = 0.dp,
+                            windowInsets = WindowInsets(0, 0, 0, 0)
+                        ) {
+                            CustomerBottomTab.entries.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = selectedTab == tab,
+                                    onClick = { selectedTab = tab },
+                                    icon = {
+                                        Icon(
+                                            imageVector = tab.icon,
+                                            contentDescription = tab.title,
+                                            modifier = Modifier.size(23.dp)
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = tab.title,
+                                            fontSize = 10.sp,
+                                            lineHeight = 12.sp,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 2
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        val contentModifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
+
+        Crossfade(targetState = selectedTab, label = "customer-tab") { currentTab ->
+            when (currentTab) {
+                CustomerBottomTab.HOME -> CustomerHomeTabContent(
+                    modifier = contentModifier,
+                    user = user,
+                    products = products,
+                    inventory = inventory,
+                    requests = requests
+                )
+
+                CustomerBottomTab.REQUESTS -> CustomerRequestsTabContent(
+                    modifier = contentModifier,
+                    user = user,
+                    requests = requests,
+                    products = products
+                )
+
+                CustomerBottomTab.CHAT -> RoleChatHost(
+                    modifier = contentModifier.fillMaxSize(),
+                    chatViewModel = chatViewModel,
+                    activeThreadId = chatThreadId,
+                    onThreadChange = { chatThreadId = it }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DistributorInventoryScreen() {
+    val user by SessionManager.currentUser.collectAsState()
+    val inventory by AppRepository.inventory.collectAsState()
+    val products by AppRepository.products.collectAsState()
+    val sales by AppRepository.sales.collectAsState()
+    val requests by AppRepository.goodsRequests.collectAsState()
+
+    val distInventory = inventory.filter { it.distributorId == user?.distributorId }
+    val distributorSales = sales.filter { it.distributorId == user?.distributorId }
+    val distributorRequests = requests.filter { it.distributorId == user?.distributorId }
+    val totalUnits = distInventory.sumOf { it.quantity }
+    val lowStockCount = distInventory.count { it.quantity < 10 }
+    val weeklyUnits = distributorSales
+        .filter { System.currentTimeMillis() - it.timestamp <= 7L * 24 * 60 * 60 * 1000 }
+        .sumOf { it.quantity }
+    val showRestockDialog = remember { mutableStateOf(false) }
+    val selectedProductId = remember { mutableStateOf<String?>(null) }
+    val showCatalog = remember { mutableStateOf(false) }
+    var selectedTab by rememberSaveable { mutableStateOf(DistributorBottomTab.INVENTORY) }
+    var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
+    val chatViewModel: ChatViewModel = viewModel(
+        factory = ChatViewModel.factory(
+            chatRepository = ChatRepositoryProvider.repository,
+            sessionManager = SessionManager
+        )
+    )
+
+    Scaffold(
+        bottomBar = {
+            if (selectedTab != DistributorBottomTab.CHAT || chatThreadId == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
+                        .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 0.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
+                        tonalElevation = 2.dp,
+                        shadowElevation = 8.dp
+                    ) {
+                        NavigationBar(
+                            modifier = Modifier.height(84.dp),
+                            containerColor = Color.Transparent,
+                            tonalElevation = 0.dp,
+                            windowInsets = WindowInsets(0, 0, 0, 0)
+                        ) {
+                            DistributorBottomTab.entries.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = selectedTab == tab,
+                                    onClick = { selectedTab = tab },
+                                    icon = {
+                                        Icon(
+                                            imageVector = tab.icon,
+                                            contentDescription = tab.title,
+                                            modifier = Modifier.size(23.dp)
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = tab.title,
+                                            fontSize = 10.sp,
+                                            lineHeight = 12.sp,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 2
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        val contentModifier = Modifier
+            .padding(innerPadding)
+            .consumeWindowInsets(innerPadding)
+
+        Crossfade(targetState = selectedTab, label = "distributor-tab") { currentTab ->
+            when (currentTab) {
+                DistributorBottomTab.INVENTORY -> DistributorInventoryTabContent(
+                    modifier = contentModifier,
+                    distributorId = user?.distributorId,
+                    inventoryCount = distInventory.size,
+                    totalUnits = totalUnits,
+                    weeklyUnits = weeklyUnits,
+                    lowStockCount = lowStockCount,
+                    distInventory = distInventory,
+                    products = products,
+                    onAddProductClick = { showCatalog.value = true },
+                    onRestockClick = { productId ->
+                        selectedProductId.value = productId
+                        showRestockDialog.value = true
+                    }
+                )
+
+                DistributorBottomTab.SHIPMENTS -> DistributorRequestsTabContent(
+                    modifier = contentModifier,
+                    distributorId = user?.distributorId,
+                    requestsCount = distributorRequests.size,
+                    requests = distributorRequests,
+                    products = products
+                )
+
+                DistributorBottomTab.CATALOG -> DistributorAnalyticsTabContent(
+                    modifier = contentModifier,
+                    distributorId = user?.distributorId,
+                    inventory = inventory,
+                    sales = sales,
+                    products = products
+                )
+
+                DistributorBottomTab.CHAT -> RoleChatHost(
+                    modifier = contentModifier.fillMaxSize(),
+                    chatViewModel = chatViewModel,
+                    activeThreadId = chatThreadId,
+                    onThreadChange = { chatThreadId = it }
+                )
+
+                DistributorBottomTab.SETTINGS -> DistributorPlaceholderTab(
+                    modifier = contentModifier,
+                    title = "Settings",
+                    subtitle = "Notifications, profile, and preferences can be managed here."
+                )
+            }
+        }
+    }
+
+    if (showCatalog.value) {
+        AlertDialog(
+            onDismissRequest = { showCatalog.value = false },
+            title = { Text("Add from Catalog") },
+            text = {
+                LazyColumn {
+                    items(products) { p ->
+                        if (distInventory.none { it.productId == p.id }) {
+                            ListItem(
+                                headlineContent = { Text(p.name) },
+                                modifier = Modifier.clickable {
+                                    selectedProductId.value = p.id
+                                    showCatalog.value = false
+                                    showRestockDialog.value = true
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showCatalog.value = false }) { Text("Close") } }
+        )
+    }
+
+    if (showRestockDialog.value && selectedProductId.value != null) {
+        RestockDialog(
+            productId = selectedProductId.value!!,
+            onDismiss = { showRestockDialog.value = false },
+            onConfirm = { qty ->
+                AppRepository.updateStock(selectedProductId.value!!, user?.distributorId ?: "", qty, user?.id ?: "")
+                showRestockDialog.value = false
+            }
+        )
+    }
+}
+
+private enum class DistributorBottomTab(val title: String, val icon: ImageVector) {
+    INVENTORY("Home", Icons.Default.Home),
+    SHIPMENTS("Customer Requests", Icons.Default.LocalShipping),
+    CATALOG("Orders", Icons.Default.Inventory2),
+    CHAT("Chat", Icons.AutoMirrored.Filled.Chat),
+    SETTINGS("Settings", Icons.Default.Settings)
+}
+
+private enum class CustomerBottomTab(val title: String, val icon: ImageVector) {
+    HOME("Home", Icons.Default.Home),
+    REQUESTS("Requests", Icons.Default.LocalShipping),
+    CHAT("Chat", Icons.AutoMirrored.Filled.Chat)
+}
+
+@Composable
+private fun CustomerHomeTabContent(
+    modifier: Modifier = Modifier,
+    user: com.example.ecomerse.model.User?,
+    products: List<com.example.ecomerse.model.Product>,
+    inventory: List<com.example.ecomerse.model.InventoryItem>,
+    requests: List<com.example.ecomerse.model.GoodsRequest>
+) {
     val customerRequests = requests.filter { it.customerId == user?.id }
     val openCreditBalance = customerRequests
         .filter { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED }
         .sumOf { it.totalAmount }
     val completedRequests = customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }
-    val pendingRequests = customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING || it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED }
-    val distinctDistributors = inventory.map { it.distributorId }.distinct()
+    
     val requestCountAnimated by animateIntAsState(targetValue = customerRequests.size, label = "customer-request-count")
     val balanceAnimated by animateFloatAsState(targetValue = openCreditBalance.toFloat(), label = "customer-credit-balance")
 
-    // --- Aggregation helpers for periods ---
+    val now = System.currentTimeMillis()
+
     fun isSameDay(ts: Long, now: Long): Boolean {
         val calNow = Calendar.getInstance().apply { timeInMillis = now }
         val calTs = Calendar.getInstance().apply { timeInMillis = ts }
@@ -465,8 +749,6 @@ fun CustomerDashboardScreen() {
         val calTs = Calendar.getInstance().apply { timeInMillis = ts }
         return calNow.get(Calendar.YEAR) == calTs.get(Calendar.YEAR) && calNow.get(Calendar.MONTH) == calTs.get(Calendar.MONTH)
     }
-
-    val now = System.currentTimeMillis()
 
     fun sumForPeriod(method: com.example.ecomerse.model.PaymentMethod, period: String): Double {
         val relevant = customerRequests.filter { (it.paymentMethod == method) && (it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED || it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED) }
@@ -488,6 +770,8 @@ fun CustomerDashboardScreen() {
     val creditWeek = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CREDIT, "week")
     val creditMonth = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CREDIT, "month")
 
+    val distinctDistributors = inventory.map { it.distributorId }.distinct()
+    
     var selectedProductId by rememberSaveable { mutableStateOf(products.firstOrNull()?.id.orEmpty()) }
     var selectedDistributorId by rememberSaveable { mutableStateOf(distinctDistributors.firstOrNull().orEmpty()) }
     var quantityText by rememberSaveable { mutableStateOf("1") }
@@ -518,11 +802,9 @@ fun CustomerDashboardScreen() {
     }
 
     val availableStock = inventory.find { it.productId == selectedProductId && it.distributorId == selectedDistributorId }?.quantity ?: 0
-    val totalSpend = customerRequests.sumOf { it.totalAmount }
-    val settledSpend = customerRequests.filter { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }.sumOf { it.totalAmount }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -545,20 +827,15 @@ fun CustomerDashboardScreen() {
                 ) {
                     Column(modifier = Modifier.padding(20.dp)) {
                         Text(
-                            text = "Customer Dashboard",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Request goods on cash or credit without leaving the app.",
+                            text = "Quick Stock Access",
                             style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onPrimary,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Welcome back, ${user?.name ?: "Customer"}",
+                            style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f)
                         )
                     }
@@ -589,7 +866,6 @@ fun CustomerDashboardScreen() {
             }
         }
 
-        // Period totals for Cash and Credit
         item {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -710,7 +986,26 @@ fun CustomerDashboardScreen() {
                 }
             }
         }
+    }
+}
 
+@Composable
+private fun CustomerRequestsTabContent(
+    modifier: Modifier = Modifier,
+    user: com.example.ecomerse.model.User?,
+    requests: List<com.example.ecomerse.model.GoodsRequest>,
+    products: List<com.example.ecomerse.model.Product>
+) {
+    val customerRequests = requests.filter { it.customerId == user?.id }
+    val pendingRequests = customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING || it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED }
+    val totalSpend = customerRequests.sumOf { it.totalAmount }
+    val settledSpend = customerRequests.filter { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }.sumOf { it.totalAmount }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         item {
             ElevatedCard(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -801,181 +1096,6 @@ fun CustomerDashboardScreen() {
             }
         }
     }
-}
-
-@Composable
-fun DistributorInventoryScreen() {
-    val user by SessionManager.currentUser.collectAsState()
-    val inventory by AppRepository.inventory.collectAsState()
-    val products by AppRepository.products.collectAsState()
-    val sales by AppRepository.sales.collectAsState()
-    val requests by AppRepository.goodsRequests.collectAsState()
-
-    val distInventory = inventory.filter { it.distributorId == user?.distributorId }
-    val distributorSales = sales.filter { it.distributorId == user?.distributorId }
-    val distributorRequests = requests.filter { it.distributorId == user?.distributorId }
-    val totalUnits = distInventory.sumOf { it.quantity }
-    val lowStockCount = distInventory.count { it.quantity < 10 }
-    val weeklyUnits = distributorSales
-        .filter { System.currentTimeMillis() - it.timestamp <= 7L * 24 * 60 * 60 * 1000 }
-        .sumOf { it.quantity }
-    val showRestockDialog = remember { mutableStateOf(false) }
-    val selectedProductId = remember { mutableStateOf<String?>(null) }
-    val showCatalog = remember { mutableStateOf(false) }
-    var selectedTab by rememberSaveable { mutableStateOf(DistributorBottomTab.INVENTORY) }
-    var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
-    val chatViewModel: ChatViewModel = viewModel(
-        factory = ChatViewModel.factory(
-            chatRepository = ChatRepositoryProvider.repository,
-            sessionManager = SessionManager
-        )
-    )
-
-    Scaffold(
-        bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
-                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 0.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
-                    tonalElevation = 2.dp,
-                    shadowElevation = 8.dp
-                ) {
-                    NavigationBar(
-                        modifier = Modifier.height(84.dp),
-                        containerColor = Color.Transparent,
-                        tonalElevation = 0.dp,
-                        windowInsets = WindowInsets(0, 0, 0, 0)
-                    ) {
-                        DistributorBottomTab.entries.forEach { tab ->
-                            NavigationBarItem(
-                                selected = selectedTab == tab,
-                                onClick = { selectedTab = tab },
-                                icon = {
-                                    Icon(
-                                        imageVector = tab.icon,
-                                        contentDescription = tab.title,
-                                        modifier = Modifier.size(23.dp)
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        text = tab.title,
-                                        fontSize = 10.sp,
-                                        lineHeight = 12.sp,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 2
-                                    )
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    ) { innerPadding ->
-        val contentModifier = Modifier
-            .padding(innerPadding)
-            .consumeWindowInsets(innerPadding)
-
-        Crossfade(targetState = selectedTab, label = "distributor-tab") { currentTab ->
-            when (currentTab) {
-                DistributorBottomTab.INVENTORY -> DistributorInventoryTabContent(
-                    modifier = contentModifier,
-                    distributorId = user?.distributorId,
-                    inventoryCount = distInventory.size,
-                    totalUnits = totalUnits,
-                    weeklyUnits = weeklyUnits,
-                    lowStockCount = lowStockCount,
-                    distInventory = distInventory,
-                    products = products,
-                    onAddProductClick = { showCatalog.value = true },
-                    onRestockClick = { productId ->
-                        selectedProductId.value = productId
-                        showRestockDialog.value = true
-                    }
-                )
-
-                DistributorBottomTab.SHIPMENTS -> DistributorRequestsTabContent(
-                    modifier = contentModifier,
-                    distributorId = user?.distributorId,
-                    requestsCount = distributorRequests.size,
-                    requests = distributorRequests,
-                    products = products
-                )
-
-                DistributorBottomTab.CATALOG -> DistributorAnalyticsTabContent(
-                    modifier = contentModifier,
-                    distributorId = user?.distributorId,
-                    inventory = inventory,
-                    sales = sales,
-                    products = products
-                )
-
-                DistributorBottomTab.CHAT -> RoleChatHost(
-                    modifier = contentModifier.fillMaxSize(),
-                    chatViewModel = chatViewModel,
-                    activeThreadId = chatThreadId,
-                    onThreadChange = { chatThreadId = it }
-                )
-
-                DistributorBottomTab.SETTINGS -> DistributorPlaceholderTab(
-                    modifier = contentModifier,
-                    title = "Settings",
-                    subtitle = "Notifications, profile, and preferences can be managed here."
-                )
-            }
-        }
-    }
-
-    if (showCatalog.value) {
-        AlertDialog(
-            onDismissRequest = { showCatalog.value = false },
-            title = { Text("Add from Catalog") },
-            text = {
-                LazyColumn {
-                    items(products) { p ->
-                        if (distInventory.none { it.productId == p.id }) {
-                            ListItem(
-                                headlineContent = { Text(p.name) },
-                                modifier = Modifier.clickable {
-                                    selectedProductId.value = p.id
-                                    showCatalog.value = false
-                                    showRestockDialog.value = true
-                                }
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showCatalog.value = false }) { Text("Close") } }
-        )
-    }
-
-    if (showRestockDialog.value && selectedProductId.value != null) {
-        RestockDialog(
-            productId = selectedProductId.value!!,
-            onDismiss = { showRestockDialog.value = false },
-            onConfirm = { qty ->
-                AppRepository.updateStock(selectedProductId.value!!, user?.distributorId ?: "", qty, user?.id ?: "")
-                showRestockDialog.value = false
-            }
-        )
-    }
-}
-
-private enum class DistributorBottomTab(val title: String, val icon: ImageVector) {
-    INVENTORY("Home", Icons.Default.Home),
-    SHIPMENTS("Customer Requests", Icons.Default.LocalShipping),
-    CATALOG("Orders", Icons.Default.Inventory2),
-    CHAT("Chat", Icons.AutoMirrored.Filled.Chat),
-    SETTINGS("Settings", Icons.Default.Settings)
 }
 
 @Composable
