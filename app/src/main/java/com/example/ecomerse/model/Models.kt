@@ -15,6 +15,7 @@ data class User(
     var role: UserRole = UserRole.CUSTOMER,
     var distributorId: String? = null,
     var email: String = "",
+    var passwordHash: String = "", // Basic password storage for demo
     var position: String = "Staff",
     var status: EmployeeStatus = EmployeeStatus.ACTIVE
 )

@@ -138,11 +138,6 @@ object AppRepository {
         requestId: String? = null
     ): Boolean {
         val invId = "${productId}_${distributorId}"
-        // Since this is a synchronous return type in current code, but Firestore is async,
-        // we might have a problem if we don't change signatures. 
-        // For now, I'll use a task but the boolean return will be technically optimistic or requires a refactor.
-        // Actually, most UI calls don't strictly wait for the boolean in a blocking way if they use flows.
-        
         db.collection("inventory").document(invId).get().addOnSuccessListener { snapshot ->
             if (snapshot.exists()) {
                 val item = snapshot.toObject(InventoryItem::class.java)!!
@@ -306,18 +301,18 @@ object SessionManager {
 
     private fun seedDefaultUsers() {
         val defaultUsers = listOf(
-            User("cust_001", "Customer Demo", UserRole.CUSTOMER, email = "customer@ecomerse.com"),
-            User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1", email = "distributor@ecomerse.com"),
-            User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER, email = "manager@ecomerse.com")
+            User("cust_001", "Customer Demo", UserRole.CUSTOMER, email = "customer@ecomerse.com", passwordHash = "pass1234"),
+            User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1", email = "distributor@ecomerse.com", passwordHash = "pass1234"),
+            User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER, email = "manager@ecomerse.com", passwordHash = "pass1234")
         )
         defaultUsers.forEach { db.collection("users").document(it.id).set(it) }
     }
 
     fun login(role: UserRole) {
         val user = when(role) {
-            UserRole.CUSTOMER -> User("cust_001", "Customer Demo", UserRole.CUSTOMER)
-            UserRole.DISTRIBUTOR -> User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1")
-            UserRole.COMPANY_MANAGER -> User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER)
+            UserRole.CUSTOMER -> User("cust_001", "Customer Demo", UserRole.CUSTOMER, email = "customer@ecomerse.com", passwordHash = "pass1234")
+            UserRole.DISTRIBUTOR -> User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1", email = "distributor@ecomerse.com", passwordHash = "pass1234")
+            UserRole.COMPANY_MANAGER -> User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER, email = "manager@ecomerse.com", passwordHash = "pass1234")
         }
         _currentUser.value = user
         db.collection("users").document(user.id).set(user)
@@ -325,11 +320,9 @@ object SessionManager {
     }
 
     fun login(email: String, password: String): Boolean {
-        // Simplified auth for demo: finding user by email in Firestore
         val normalizedEmail = email.trim().lowercase(Locale.ROOT)
-        val user = _allUsers.value.find { it.email.lowercase() == normalizedEmail }
+        val user = _allUsers.value.find { it.email.lowercase() == normalizedEmail && it.passwordHash == password }
         if (user != null) {
-            // In a real app, use Firebase Auth. Here we just simulate.
             _currentUser.value = user
             AppRepository.logActivity(user.id, "Session started: Logged in with credentials")
             return true
@@ -344,7 +337,13 @@ object SessionManager {
         role: UserRole = UserRole.CUSTOMER,
         distributorId: String? = null
     ): Boolean {
+        val trimmedName = name.trim()
         val normalizedEmail = email.trim().lowercase(Locale.ROOT)
+        
+        // Basic Validation
+        if (trimmedName.isEmpty() || normalizedEmail.isEmpty() || password.length < 4) return false
+        
+        // Check if email already registered
         if (_allUsers.value.any { it.email.lowercase() == normalizedEmail }) return false
 
         val prefix = when (role) {
@@ -357,10 +356,11 @@ object SessionManager {
 
         val user = User(
             id = userId,
-            name = name.trim(),
+            name = trimmedName,
             role = role,
             distributorId = distributorId,
-            email = normalizedEmail
+            email = normalizedEmail,
+            passwordHash = password
         )
 
         db.collection("users").document(userId).set(user)
