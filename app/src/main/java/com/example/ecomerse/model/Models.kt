@@ -1,33 +1,37 @@
 package com.example.ecomerse.model
 
+import com.google.firebase.firestore.IgnoreExtraProperties
+
 enum class UserRole {
     CUSTOMER,
     DISTRIBUTOR,
     COMPANY_MANAGER
 }
 
+@IgnoreExtraProperties
 data class User(
-    val id: String,
-    val name: String,
-    val role: UserRole,
-    val distributorId: String? = null,
-    val email: String = "",
-    val position: String = "Staff",
-    val status: EmployeeStatus = EmployeeStatus.ACTIVE
+    var id: String = "",
+    var name: String = "",
+    var role: UserRole = UserRole.CUSTOMER,
+    var distributorId: String? = null,
+    var email: String = "",
+    var position: String = "Staff",
+    var status: EmployeeStatus = EmployeeStatus.ACTIVE
 )
 
 enum class EmployeeStatus {
     ACTIVE, INACTIVE, SUSPENDED
 }
 
+@IgnoreExtraProperties
 data class LeaveRequest(
-    val id: String,
-    val employeeId: String,
-    val employeeName: String,
-    val startDate: String,
-    val endDate: String,
-    val reason: String,
-    val status: LeaveStatus = LeaveStatus.PENDING
+    var id: String = "",
+    var employeeId: String = "",
+    var employeeName: String = "",
+    var startDate: String = "",
+    var endDate: String = "",
+    var reason: String = "",
+    var status: LeaveStatus = LeaveStatus.PENDING
 )
 
 enum class LeaveStatus {
@@ -47,53 +51,58 @@ enum class GoodsRequestStatus {
     REJECTED
 }
 
+@IgnoreExtraProperties
 data class Product(
-    val id: String,
-    val name: String,
-    val description: String,
-    val unitPrice: Double,
-    val unit: String = "unit"
+    var id: String = "",
+    var name: String = "",
+    var description: String = "",
+    var unitPrice: Double = 0.0,
+    var unit: String = "unit"
 )
 
+@IgnoreExtraProperties
 data class InventoryItem(
-    val productId: String,
-    val distributorId: String,
-    val quantity: Int
+    var productId: String = "",
+    var distributorId: String = "",
+    var quantity: Int = 0
 )
 
+@IgnoreExtraProperties
 data class Sale(
-    val id: String,
-    val productId: String,
-    val distributorId: String,
-    val handledByUserId: String,
-    val quantity: Int,
-    val timestamp: Long,
-    val paymentMethod: PaymentMethod = PaymentMethod.CASH,
-    val requestId: String? = null
+    var id: String = "",
+    var productId: String = "",
+    var distributorId: String = "",
+    var handledByUserId: String = "",
+    var quantity: Int = 0,
+    var timestamp: Long = 0,
+    var paymentMethod: PaymentMethod = PaymentMethod.CASH,
+    var requestId: String? = null
 )
 
+@IgnoreExtraProperties
 data class GoodsRequest(
-    val id: String,
-    val customerId: String,
-    val customerName: String,
-    val distributorId: String,
-    val productId: String,
-    val quantity: Int,
-    val unitPrice: Double,
-    val totalAmount: Double,
-    val paymentMethod: PaymentMethod,
-    val status: GoodsRequestStatus = GoodsRequestStatus.PENDING,
-    val requestedAt: Long,
-    val dueAt: Long? = null,
-    val fulfilledAt: Long? = null,
-    val settledAt: Long? = null,
-    val handledByUserId: String? = null,
-    val note: String = ""
+    var id: String = "",
+    var customerId: String = "",
+    var customerName: String = "",
+    var distributorId: String = "",
+    var productId: String = "",
+    var quantity: Int = 0,
+    var unitPrice: Double = 0.0,
+    var totalAmount: Double = 0.0,
+    var paymentMethod: PaymentMethod = PaymentMethod.CASH,
+    var status: GoodsRequestStatus = GoodsRequestStatus.PENDING,
+    var requestedAt: Long = 0,
+    var dueAt: Long? = null,
+    var fulfilledAt: Long? = null,
+    var settledAt: Long? = null,
+    var handledByUserId: String? = null,
+    var note: String = ""
 )
 
+@IgnoreExtraProperties
 data class ActivityLog(
-    val id: String,
-    val userId: String,
-    val action: String,
-    val timestamp: Long
+    var id: String = "",
+    var userId: String = "",
+    var action: String = "",
+    var timestamp: Long = 0
 )

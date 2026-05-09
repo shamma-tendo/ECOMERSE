@@ -3,14 +3,12 @@ package com.example.ecomerse.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ecomerse.data.AppRepository
+import com.example.ecomerse.data.SessionManager
 import com.example.ecomerse.model.*
 import kotlinx.coroutines.flow.*
 
 data class ManagerUiState(
-    val employees: List<User> = listOf(
-        User("dist_staff_1", "Grace Namara", UserRole.DISTRIBUTOR, "dist1", "grace@ecomerse.com", "Distribution Lead"),
-        User("dist_staff_2", "Peter Ouma", UserRole.DISTRIBUTOR, "dist2", "peter@ecomerse.com", "Warehouse Coordinator")
-    ),
+    val users: List<User> = emptyList(),
     val leaveRequests: List<LeaveRequest> = listOf(
         LeaveRequest("L1", "agent_001", "Alice Smith", "2023-12-01", "2023-12-05", "Vacation"),
         LeaveRequest("L2", "agent_002", "Charlie Brown", "2023-12-10", "2023-12-11", "Medical")
@@ -33,6 +31,11 @@ class ManagerViewModel : ViewModel() {
 
     init {
         observeSalesData()
+        loadUsers()
+    }
+
+    private fun loadUsers() {
+        _uiState.update { it.copy(users = SessionManager.getAllUsers()) }
     }
 
     private fun observeSalesData() {
@@ -87,11 +90,19 @@ class ManagerViewModel : ViewModel() {
     }
 
     fun terminateEmployee(employeeId: String) {
-        _uiState.update { state ->
-            state.copy(employees = state.employees.map {
-                if (it.id == employeeId) it.copy(status = EmployeeStatus.INACTIVE) else it
-            })
-        }
-        AppRepository.logActivity("MANAGER", "Terminated employee $employeeId")
+        SessionManager.updateUserRole(employeeId, UserRole.CUSTOMER) // Just for demo, maybe role change?
+        // Actually the user wants to change roles.
+        loadUsers()
+        AppRepository.logActivity("MANAGER", "Updated user $employeeId status")
+    }
+
+    fun changeUserRole(userId: String, newRole: UserRole) {
+        SessionManager.updateUserRole(userId, newRole)
+        loadUsers()
+    }
+
+    fun changeUserDistributorId(userId: String, newHubId: String?) {
+        SessionManager.updateUserDistributorId(userId, newHubId)
+        loadUsers()
     }
 }

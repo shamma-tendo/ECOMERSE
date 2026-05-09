@@ -1,22 +1,25 @@
 package com.example.ecomerse.model
 
+import com.google.firebase.firestore.IgnoreExtraProperties
+
+@IgnoreExtraProperties
 data class ChatThread(
-    val id: String,
-    val participantIds: List<String>,
-    val title: String,
-    val lastMessage: String,
-    val lastTimestamp: Long,
-    val unreadCountByUser: Map<String, Int>
+    var id: String = "",
+    var participantIds: List<String> = emptyList(),
+    var title: String = "",
+    var lastMessage: String = "",
+    var lastTimestamp: Long = 0,
+    var unreadCountByUser: Map<String, Int> = emptyMap()
 )
 
+@IgnoreExtraProperties
 data class ChatMessage(
-    val id: String,
-    val threadId: String,
-    val senderId: String,
-    val senderName: String,
-    val text: String,
-    val timestamp: Long,
-    val deliveredTo: List<String>,
-    val readBy: List<String>
+    var id: String = "",
+    var threadId: String = "",
+    var senderId: String = "",
+    var senderName: String = "",
+    var text: String = "",
+    var timestamp: Long = 0,
+    var deliveredTo: List<String> = emptyList(),
+    var readBy: List<String> = emptyList()
 )
-

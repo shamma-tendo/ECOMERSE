@@ -56,10 +56,11 @@ class DistributorInventoryViewModel : ViewModel() {
 
     fun recordDistribution(productId: String) {
         val currentUser = SessionManager.currentUser.value
-        if (currentUser != null && currentUser.distributorId != null) {
+        val distId = currentUser?.distributorId
+        if (currentUser != null && distId != null) {
             AppRepository.recordSale(
                 productId = productId,
-                distributorId = currentUser.distributorId,
+                distributorId = distId,
                 handledByUserId = currentUser.id,
                 quantity = 1
             )
