@@ -35,7 +35,8 @@ class DistributorInventoryViewModel : ViewModel() {
             AppRepository.inventory
         ) { user, products, inventory ->
             if (user != null) {
-                val distId = user.distributorId ?: ""
+                // Ensure distributor always has a valid ID
+                val distId = user.distributorId ?: "dist1"
                 val stockInfoList = products.map { product ->
                     val stock = inventory.find {
                         it.productId == product.id && it.distributorId == distId
@@ -56,8 +57,9 @@ class DistributorInventoryViewModel : ViewModel() {
 
     fun recordDistribution(productId: String) {
         val currentUser = SessionManager.currentUser.value
-        val distId = currentUser?.distributorId
-        if (currentUser != null && distId != null) {
+        // Ensure distributor ID is never null
+        val distId = currentUser?.distributorId ?: "dist1"
+        if (currentUser != null) {
             AppRepository.recordSale(
                 productId = productId,
                 distributorId = distId,

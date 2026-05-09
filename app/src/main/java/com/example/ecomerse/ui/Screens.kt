@@ -183,6 +183,7 @@ fun SignUpScreen(onBack: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf(UserRole.CUSTOMER) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val primaryColor = MaterialTheme.colorScheme.primary
 
@@ -245,7 +246,23 @@ fun SignUpScreen(onBack: () -> Unit) {
             singleLine = true
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text("Select your role:", style = MaterialTheme.typography.labelMedium, color = primaryColor)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            UserRole.entries.forEach { role ->
+                FilterChip(
+                    selected = selectedRole == role,
+                    onClick = { selectedRole = role },
+                    label = { Text(role.name.replace("_", " ").lowercase().capitalize(Locale.ROOT)) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         if (errorMessage != null) {
             Text(
@@ -261,7 +278,8 @@ fun SignUpScreen(onBack: () -> Unit) {
                 val error = SessionManager.fastAccess(
                     name = name,
                     email = email,
-                    password = password
+                    password = password,
+                    role = selectedRole
                 )
                 errorMessage = error
             },
@@ -372,17 +390,27 @@ fun LoginScreen(onBack: () -> Unit) {
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Demo Credentials",
+            text = "Demo Credentials (Email / Password)",
             style = MaterialTheme.typography.labelMedium,
             color = primaryColor.copy(alpha = 0.7f)
         )
+        Spacer(modifier = Modifier.height(8.dp))
+        
         SessionManager.demoCredentials().forEach { (demoEmail, demoPassword) ->
-            Text(
-                text = "$demoEmail / $demoPassword",
-                style = MaterialTheme.typography.bodySmall,
-                color = primaryColor.copy(alpha = 0.6f),
-                modifier = Modifier.fillMaxWidth()
-            )
+            val roleName = demoEmail.split("@")[0].capitalize(Locale.ROOT)
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                color = primaryColor.copy(alpha = 0.05f),
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(roleName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = primaryColor)
+                    Text("$demoEmail / $demoPassword", style = MaterialTheme.typography.bodySmall, color = primaryColor.copy(alpha = 0.8f))
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -465,7 +493,7 @@ fun CustomerDashboardScreen() {
                             tonalElevation = 0.dp,
                             windowInsets = WindowInsets(0, 0, 0, 0)
                         ) {
-                            CustomerBottomTab.entries.forEach { tab ->
+                            CustomerBottomTab.values().forEach { tab ->
                                 NavigationBarItem(
                                     selected = selectedTab == tab,
                                     onClick = { selectedTab = tab },
@@ -533,23 +561,40 @@ fun DistributorInventoryScreen() {
     val sales by AppRepository.sales.collectAsState()
     val requests by AppRepository.goodsRequests.collectAsState()
 
-    val distInventory = inventory.filter { it.distributorId == user?.distributorId }
-    val distributorSales = sales.filter { it.distributorId == user?.distributorId }
-    val distributorRequests = requests.filter { it.distributorId == user?.distributorId }
+    // Ensure distributor has a valid ID - default to "dist1" if missing
+    val distId = user?.distributorId ?: "dist1"
+
+    val distInventory = remember(inventory, distId) {
+        inventory.filter { it.distributorId == distId && it.productId.isNotBlank() }
+    }
     
-    val totalUnits = distInventory.sumOf { it.quantity }
-    val lowStockCount = distInventory.count { it.quantity < 10 }
-    val weeklyUnits = distributorSales
-        .filter { 
-            val ts = it.timestamp
-            ts > 0 && (System.currentTimeMillis() - ts <= 7L * 24 * 60 * 60 * 1000) 
-        }
-        .sumOf { it.quantity }
+    val distributorSales = remember(sales, distId) {
+        sales.filter { it.distributorId == distId }
+    }
+    
+    val distributorRequests = remember(requests, distId) {
+        requests.filter { it.distributorId == distId }
+    }
+    
+    val totalUnits = remember(distInventory) { distInventory.sumOf { it.quantity } }
+    val lowStockCount = remember(distInventory) { distInventory.count { it.quantity < 10 } }
+    
+    val weeklyUnits = remember(distributorSales) {
+        distributorSales
+            .filter { 
+                val ts = it.timestamp
+                ts > 0 && (System.currentTimeMillis() - ts <= 7L * 24 * 60 * 60 * 1000) 
+            }
+            .sumOf { it.quantity }
+    }
+    
     val showRestockDialog = remember { mutableStateOf(false) }
     val selectedProductId = remember { mutableStateOf<String?>(null) }
     val showCatalog = remember { mutableStateOf(false) }
+    
     var selectedTab by rememberSaveable { mutableStateOf(DistributorBottomTab.INVENTORY) }
     var chatThreadId by rememberSaveable { mutableStateOf<String?>(null) }
+
     val chatViewModel: ChatViewModel = viewModel(
         factory = ChatViewModel.factory(
             chatRepository = ChatRepositoryProvider.repository,
@@ -580,7 +625,7 @@ fun DistributorInventoryScreen() {
                             tonalElevation = 0.dp,
                             windowInsets = WindowInsets(0, 0, 0, 0)
                         ) {
-                            DistributorBottomTab.entries.forEach { tab ->
+                            DistributorBottomTab.values().forEach { tab ->
                                 NavigationBarItem(
                                     selected = selectedTab == tab,
                                     onClick = { selectedTab = tab },
@@ -616,7 +661,7 @@ fun DistributorInventoryScreen() {
             when (currentTab) {
                 DistributorBottomTab.INVENTORY -> DistributorInventoryTabContent(
                     modifier = contentModifier,
-                    distributorId = user?.distributorId,
+                    distributorId = distId,
                     inventoryCount = distInventory.size,
                     totalUnits = totalUnits,
                     weeklyUnits = weeklyUnits,
@@ -632,7 +677,7 @@ fun DistributorInventoryScreen() {
 
                 DistributorBottomTab.SHIPMENTS -> DistributorRequestsTabContent(
                     modifier = contentModifier,
-                    distributorId = user?.distributorId,
+                    distributorId = distId,
                     requestsCount = distributorRequests.size,
                     requests = distributorRequests,
                     products = products
@@ -640,7 +685,7 @@ fun DistributorInventoryScreen() {
 
                 DistributorBottomTab.CATALOG -> DistributorAnalyticsTabContent(
                     modifier = contentModifier,
-                    distributorId = user?.distributorId,
+                    distributorId = distId,
                     inventory = inventory,
                     sales = sales,
                     products = products
@@ -686,30 +731,47 @@ fun DistributorInventoryScreen() {
         )
     }
 
-    if (showRestockDialog.value && selectedProductId.value != null) {
+    val currentSelectedId = selectedProductId.value
+    if (showRestockDialog.value && currentSelectedId != null) {
         RestockDialog(
-            productId = selectedProductId.value!!,
+            productId = currentSelectedId,
             onDismiss = { showRestockDialog.value = false },
             onConfirm = { qty ->
-                AppRepository.updateStock(selectedProductId.value!!, user?.distributorId ?: "", qty, user?.id ?: "")
+                AppRepository.updateStock(currentSelectedId, distId, qty, user?.id ?: "")
                 showRestockDialog.value = false
             }
         )
     }
 }
 
-private enum class DistributorBottomTab(val title: String, val icon: ImageVector) {
-    INVENTORY("Home", Icons.Default.Home),
-    SHIPMENTS("Customer Requests", Icons.Default.LocalShipping),
-    CATALOG("Orders", Icons.Default.Inventory2),
-    CHAT("Chat", Icons.AutoMirrored.Filled.Chat),
-    SETTINGS("Settings", Icons.Default.Settings)
+enum class DistributorBottomTab(val title: String) {
+    INVENTORY("Home"),
+    SHIPMENTS("Customer Requests"),
+    CATALOG("Orders"),
+    CHAT("Chat"),
+    SETTINGS("Settings");
+
+    val icon: ImageVector
+        get() = when (this) {
+            INVENTORY -> Icons.Default.Home
+            SHIPMENTS -> Icons.Default.LocalShipping
+            CATALOG -> Icons.Default.Inventory2
+            CHAT -> Icons.AutoMirrored.Filled.Chat
+            SETTINGS -> Icons.Default.Settings
+        }
 }
 
-private enum class CustomerBottomTab(val title: String, val icon: ImageVector) {
-    HOME("Home", Icons.Default.Home),
-    REQUESTS("Requests", Icons.Default.LocalShipping),
-    CHAT("Chat", Icons.AutoMirrored.Filled.Chat)
+enum class CustomerBottomTab(val title: String) {
+    HOME("Home"),
+    REQUESTS("Requests"),
+    CHAT("Chat");
+
+    val icon: ImageVector
+        get() = when (this) {
+            HOME -> Icons.Default.Home
+            REQUESTS -> Icons.Default.LocalShipping
+            CHAT -> Icons.AutoMirrored.Filled.Chat
+        }
 }
 
 @Composable
@@ -720,11 +782,29 @@ private fun CustomerHomeTabContent(
     inventory: List<com.example.ecomerse.model.InventoryItem>,
     requests: List<com.example.ecomerse.model.GoodsRequest>
 ) {
-    val customerRequests = requests.filter { it.customerId == user?.id }
-    val openCreditBalance = customerRequests
-        .filter { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED }
-        .sumOf { it.totalAmount }
-    val completedRequests = customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }
+    val customerRequests = remember(requests, user) { 
+        try {
+            requests.filter { it.customerId == user?.id } 
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    val openCreditBalance = remember(customerRequests) {
+        try {
+            customerRequests
+                .filter { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED }
+                .sumOf { it.totalAmount }
+        } catch (e: Exception) {
+            0.0
+        }
+    }
+    val completedRequests = remember(customerRequests) { 
+        try {
+            customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED } 
+        } catch (e: Exception) {
+            0
+        }
+    }
     
     val requestCountAnimated by animateIntAsState(targetValue = customerRequests.size, label = "customer-request-count")
     val balanceAnimated by animateFloatAsState(targetValue = openCreditBalance.toFloat(), label = "customer-credit-balance")
@@ -993,10 +1073,18 @@ private fun CustomerRequestsTabContent(
     requests: List<com.example.ecomerse.model.GoodsRequest>,
     products: List<com.example.ecomerse.model.Product>
 ) {
-    val customerRequests = requests.filter { it.customerId == user?.id }
-    val pendingRequests = customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING || it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED }
-    val totalSpend = customerRequests.sumOf { it.totalAmount }
-    val settledSpend = customerRequests.filter { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }.sumOf { it.totalAmount }
+    val customerRequests = remember(requests, user) { 
+        requests.filter { it.customerId == user?.id } 
+    }
+    val pendingRequests = remember(customerRequests) { 
+        customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING || it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED } 
+    }
+    val totalSpend = remember(customerRequests) { 
+        customerRequests.sumOf { it.totalAmount } 
+    }
+    val settledSpend = remember(customerRequests) { 
+        customerRequests.filter { it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED }.sumOf { it.totalAmount } 
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -1256,6 +1344,9 @@ private fun DistributorRequestsTabContent(
     requests: List<com.example.ecomerse.model.GoodsRequest>,
     products: List<com.example.ecomerse.model.Product>
 ) {
+    val currentUser by SessionManager.currentUser.collectAsState()
+    val currentUserId = currentUser?.id ?: ""
+
     val pendingRequests = requests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING }
     val cashRequests = requests.count { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CASH }
     val creditRequests = requests.count { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT }
@@ -1353,11 +1444,11 @@ private fun DistributorRequestsTabContent(
 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (request.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING) {
-                                TextButton(onClick = { AppRepository.rejectGoodsRequest(request.id, distributorId.orEmpty()) }) { Text("Reject") }
-                                Button(onClick = { AppRepository.approveGoodsRequest(request.id, distributorId.orEmpty()) }) { Text("Approve") }
+                                TextButton(onClick = { AppRepository.rejectGoodsRequest(request.id, currentUserId) }) { Text("Reject") }
+                                Button(onClick = { AppRepository.approveGoodsRequest(request.id, currentUserId) }) { Text("Approve") }
                             }
                             if (request.status != com.example.ecomerse.model.GoodsRequestStatus.REJECTED && request.status != com.example.ecomerse.model.GoodsRequestStatus.SETTLED) {
-                                OutlinedButton(onClick = { AppRepository.fulfillGoodsRequest(request.id, distributorId.orEmpty()) }) {
+                                OutlinedButton(onClick = { AppRepository.fulfillGoodsRequest(request.id, currentUserId) }) {
                                     Text(if (request.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT) "Fulfill credit" else "Mark paid")
                                 }
                             }
@@ -1377,19 +1468,51 @@ private fun DistributorAnalyticsTabContent(
     sales: List<com.example.ecomerse.model.Sale>,
     products: List<com.example.ecomerse.model.Product>
 ) {
-    val distInventory = inventory.filter { it.distributorId == distributorId }
-    val distSales = sales.filter { it.distributorId == distributorId }
-    val unitsSold = distSales.sumOf { it.quantity }
-    val lowStock = distInventory.count { it.quantity < 10 }
+    val distInventory = remember(inventory, distributorId) { 
+        try {
+            if (distributorId != null) {
+                inventory.filter { it.distributorId == distributorId }
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    val distSales = remember(sales, distributorId) { 
+        try {
+            if (distributorId != null) {
+                sales.filter { it.distributorId == distributorId }
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    val unitsSold = remember(distSales) { 
+        try { distSales.sumOf { it.quantity } } catch (e: Exception) { 0 }
+    }
+    val lowStock = remember(distInventory) { 
+        try { distInventory.count { it.quantity < 10 } } catch (e: Exception) { 0 }
+    }
 
-    val topProducts = distSales
-        .groupBy { it.productId }
-        .mapValues { (_, records) -> records.sumOf { it.quantity } }
-        .toList()
-        .sortedByDescending { it.second }
-        .take(3)
+    val topProducts = remember(distSales) {
+        try {
+            distSales
+                .groupBy { it.productId }
+                .mapValues { (_, records) -> records.sumOf { it.quantity } }
+                .toList()
+                .sortedByDescending { it.second }
+                .take(3)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 
-    val maxTopUnits = (topProducts.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1).toFloat()
+    val maxTopUnits = remember(topProducts) {
+        (topProducts.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1).toFloat()
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),

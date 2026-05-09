@@ -3,7 +3,6 @@ package com.example.ecomerse.data
 import android.util.Log
 import com.example.ecomerse.model.ChatMessage
 import com.example.ecomerse.model.ChatThread
-import com.example.ecomerse.model.User
 import com.example.ecomerse.model.UserRole
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -105,7 +104,7 @@ class FirestoreChatRepository : ChatRepository {
     override fun createOrGetDirectThread(userA: String, userB: String): String {
         // This simplified version assumes we find existing thread or create a new one.
         // In a real live environment, you'd query first.
-        val threadId = if (userA < userB) "${userA}_${userB}" else "${userB}_${userA}"
+        val threadId = if (userA < userB) "${userA}_$userB" else "${userB}_$userA"
         
         db.collection("chatThreads").document(threadId).get().addOnSuccessListener { snapshot ->
             if (!snapshot.exists()) {

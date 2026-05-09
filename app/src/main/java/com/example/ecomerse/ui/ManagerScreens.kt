@@ -70,7 +70,7 @@ fun CompanyManagerDashboard(
                             tonalElevation = 0.dp,
                             windowInsets = WindowInsets(0, 0, 0, 0)
                         ) {
-                            ManagerBottomTab.entries.forEach { tab ->
+                            ManagerBottomTab.values().forEach { tab ->
                                 NavigationBarItem(
                                     selected = selectedTab == tab,
                                     onClick = { selectedTab = tab },
@@ -148,12 +148,21 @@ private fun ManagerHomeScreen(state: ManagerUiState, onNavigate: (ManagerBottomT
     }
 }
 
-private enum class ManagerBottomTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    HOME("Home", Icons.Default.Home),
-    STAFF("Staff", Icons.Default.People),
-    APPROVALS("Approvals", Icons.Default.Task),
-    REPORTS("Reports", Icons.Default.Assessment),
-    CHAT("Chat", Icons.AutoMirrored.Filled.Chat)
+enum class ManagerBottomTab(val title: String) {
+    HOME("Home"),
+    STAFF("Staff"),
+    APPROVALS("Approvals"),
+    REPORTS("Reports"),
+    CHAT("Chat");
+
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+        get() = when (this) {
+            HOME -> Icons.Default.Home
+            STAFF -> Icons.Default.People
+            APPROVALS -> Icons.Default.Task
+            REPORTS -> Icons.Default.Assessment
+            CHAT -> Icons.AutoMirrored.Filled.Chat
+        }
 }
 
 @Composable

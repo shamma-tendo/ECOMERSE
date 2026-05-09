@@ -3,7 +3,6 @@ package com.example.ecomerse.data
 import android.util.Log
 import com.example.ecomerse.model.*
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -137,7 +136,7 @@ object AppRepository {
     }
 
     fun distributeStock(productId: String, distributorId: String, quantity: Int, userId: String) {
-        val id = "${productId}_${distributorId}"
+        val id = "${productId}_$distributorId"
         db.collection("inventory").document(id).get().addOnSuccessListener { snapshot ->
             if (snapshot.exists()) {
                 val current = snapshot.toObject(InventoryItem::class.java)
@@ -352,7 +351,13 @@ object SessionManager {
         if (user != null) {
             // Existing user: check password
             if (user.passwordHash == password) {
-                _currentUser.value = user
+                // Ensure distributor users have a distributorId
+                val updatedUser = if (user.role == UserRole.DISTRIBUTOR && user.distributorId == null) {
+                    user.copy(distributorId = "dist1")
+                } else {
+                    user
+                }
+                _currentUser.value = updatedUser
                 AppRepository.logActivity(user.id, "Logged in")
                 return true
             }
@@ -365,7 +370,7 @@ object SessionManager {
      * Simplified entry point: Just works for the user.
      * If account exists, logs in. If new, creates it.
      */
-    fun fastAccess(name: String, email: String, password: String): String? {
+    fun fastAccess(name: String, email: String, password: String, role: UserRole = UserRole.CUSTOMER): String? {
         val normalizedEmail = email.trim().lowercase(Locale.ROOT)
         val existingUser = _allUsers.value.find { it.email.lowercase() == normalizedEmail }
 
@@ -382,12 +387,13 @@ object SessionManager {
         if (email.isBlank() || !email.contains("@")) return "Please enter a valid email."
         if (password.length < 4) return "Use at least 4 characters for security."
 
-        val userId = "cust_${UUID.randomUUID().toString().take(6)}"
+        val userId = "${role.name.lowercase().take(4)}_${UUID.randomUUID().toString().take(6)}"
 
         val user = User(
             id = userId,
             name = name.trim(),
-            role = UserRole.CUSTOMER,
+            role = role,
+            distributorId = if (role == UserRole.DISTRIBUTOR) "dist1" else null, // Default hub for new distributors
             email = normalizedEmail,
             passwordHash = password
         )

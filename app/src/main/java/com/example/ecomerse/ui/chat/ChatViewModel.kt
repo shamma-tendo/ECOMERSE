@@ -43,7 +43,8 @@ class ChatViewModel(
             return
         }
 
-        threadsJob?.cancel()
+        if (threadsJob?.isActive == true) return
+
         threadsJob = viewModelScope.launch {
             chatRepository.threadsForUser(userId).collectLatest { userThreads ->
                 _threads.value = userThreads
