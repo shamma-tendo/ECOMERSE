@@ -1,5 +1,6 @@
 package com.example.ecomerse.data
 
+import android.util.Log
 import com.example.ecomerse.model.ChatMessage
 import com.example.ecomerse.model.ChatThread
 import com.example.ecomerse.model.User
@@ -30,12 +31,14 @@ class FirestoreChatRepository : ChatRepository {
         
         db.collection("chatThreads")
             .whereArrayContains("participantIds", userId)
-            // Temporarily removing orderBy until index is created in console
-            // .orderBy("lastTimestamp", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
-                val threads = snapshot?.toObjects(ChatThread::class.java) ?: emptyList()
-                flow.value = threads.sortedByDescending { it.lastTimestamp }
+                try {
+                    val threads = snapshot?.toObjects(ChatThread::class.java)?.filterNotNull() ?: emptyList()
+                    flow.value = threads.sortedByDescending { it.lastTimestamp }
+                } catch (ex: Exception) {
+                    Log.e("ChatRepository", "Error parsing threads", ex)
+                }
             }
             
         return flow
@@ -48,7 +51,11 @@ class FirestoreChatRepository : ChatRepository {
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
-                flow.value = snapshot?.toObjects(ChatMessage::class.java) ?: emptyList()
+                try {
+                    flow.value = snapshot?.toObjects(ChatMessage::class.java)?.filterNotNull() ?: emptyList()
+                } catch (ex: Exception) {
+                    Log.e("ChatRepository", "Error parsing messages", ex)
+                }
             }
             
         return flow

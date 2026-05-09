@@ -258,19 +258,12 @@ fun SignUpScreen(onBack: () -> Unit) {
 
         Button(
             onClick = {
-                val registered = SessionManager.register(
+                val error = SessionManager.fastAccess(
                     name = name,
                     email = email,
-                    password = password,
-                    role = UserRole.CUSTOMER
+                    password = password
                 )
-
-                if (registered) {
-                    errorMessage = null
-                    SessionManager.login(email, password)
-                } else {
-                    errorMessage = "Sign up failed. Use a unique email and password with at least 4 characters."
-                }
+                errorMessage = error
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -278,7 +271,7 @@ fun SignUpScreen(onBack: () -> Unit) {
             colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
             shape = RoundedCornerShape(8.dp)
         ) {
-            Text("SIGN UP", fontWeight = FontWeight.Bold)
+            Text("GET STARTED", fontWeight = FontWeight.Bold)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -543,10 +536,14 @@ fun DistributorInventoryScreen() {
     val distInventory = inventory.filter { it.distributorId == user?.distributorId }
     val distributorSales = sales.filter { it.distributorId == user?.distributorId }
     val distributorRequests = requests.filter { it.distributorId == user?.distributorId }
+    
     val totalUnits = distInventory.sumOf { it.quantity }
     val lowStockCount = distInventory.count { it.quantity < 10 }
     val weeklyUnits = distributorSales
-        .filter { System.currentTimeMillis() - it.timestamp <= 7L * 24 * 60 * 60 * 1000 }
+        .filter { 
+            val ts = it.timestamp
+            ts > 0 && (System.currentTimeMillis() - ts <= 7L * 24 * 60 * 60 * 1000) 
+        }
         .sumOf { it.quantity }
     val showRestockDialog = remember { mutableStateOf(false) }
     val selectedProductId = remember { mutableStateOf<String?>(null) }
@@ -1114,7 +1111,7 @@ private fun DistributorInventoryTabContent(
     val animatedUnits by animateIntAsState(totalUnits, label = "total-units")
     val animatedWeeklyUnits by animateIntAsState(weeklyUnits, label = "weekly-units")
     val animatedLowStock by animateIntAsState(lowStockCount, label = "low-stock")
-    val maxQuantity = (distInventory.maxOfOrNull { it.quantity } ?: 1).toFloat()
+    val maxQuantity = (distInventory.maxOfOrNull { it.quantity }?.coerceAtLeast(1) ?: 1).toFloat()
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -1392,7 +1389,7 @@ private fun DistributorAnalyticsTabContent(
         .sortedByDescending { it.second }
         .take(3)
 
-    val maxTopUnits = (topProducts.maxOfOrNull { it.second } ?: 1).toFloat()
+    val maxTopUnits = (topProducts.maxOfOrNull { it.second }?.coerceAtLeast(1) ?: 1).toFloat()
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),

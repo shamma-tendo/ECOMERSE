@@ -35,33 +35,53 @@ object AppRepository {
     private fun setupListeners() {
         db.collection("products").addSnapshotListener { snapshot, e ->
             if (e != null) return@addSnapshotListener
-            _products.value = snapshot?.toObjects(Product::class.java) ?: emptyList()
+            try {
+                _products.value = snapshot?.toObjects(Product::class.java)?.filterNotNull() ?: emptyList()
+            } catch (ex: Exception) {
+                Log.e("Repository", "Error parsing products", ex)
+            }
         }
 
         db.collection("inventory").addSnapshotListener { snapshot, e ->
             if (e != null) return@addSnapshotListener
-            _inventory.value = snapshot?.toObjects(InventoryItem::class.java) ?: emptyList()
+            try {
+                _inventory.value = snapshot?.toObjects(InventoryItem::class.java)?.filterNotNull() ?: emptyList()
+            } catch (ex: Exception) {
+                Log.e("Repository", "Error parsing inventory", ex)
+            }
         }
 
         db.collection("sales")
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
-                val list = snapshot?.toObjects(Sale::class.java) ?: emptyList()
-                _sales.value = list.sortedByDescending { it.timestamp }
+                try {
+                    val list = snapshot?.toObjects(Sale::class.java)?.filterNotNull() ?: emptyList()
+                    _sales.value = list.sortedByDescending { it.timestamp }
+                } catch (ex: Exception) {
+                    Log.e("Repository", "Error parsing sales", ex)
+                }
             }
 
         db.collection("goodsRequests")
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
-                val list = snapshot?.toObjects(GoodsRequest::class.java) ?: emptyList()
-                _goodsRequests.value = list.sortedByDescending { it.requestedAt }
+                try {
+                    val list = snapshot?.toObjects(GoodsRequest::class.java)?.filterNotNull() ?: emptyList()
+                    _goodsRequests.value = list.sortedByDescending { it.requestedAt }
+                } catch (ex: Exception) {
+                    Log.e("Repository", "Error parsing requests", ex)
+                }
             }
 
         db.collection("activityLogs").limit(100)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
-                val list = snapshot?.toObjects(ActivityLog::class.java) ?: emptyList()
-                _activityLogs.value = list.sortedByDescending { it.timestamp }
+                try {
+                    val list = snapshot?.toObjects(ActivityLog::class.java)?.filterNotNull() ?: emptyList()
+                    _activityLogs.value = list.sortedByDescending { it.timestamp }
+                } catch (ex: Exception) {
+                    Log.e("Repository", "Error parsing logs", ex)
+                }
             }
     }
 
@@ -120,8 +140,10 @@ object AppRepository {
         val id = "${productId}_${distributorId}"
         db.collection("inventory").document(id).get().addOnSuccessListener { snapshot ->
             if (snapshot.exists()) {
-                val current = snapshot.toObject(InventoryItem::class.java)!!
-                db.collection("inventory").document(id).update("quantity", current.quantity + quantity)
+                val current = snapshot.toObject(InventoryItem::class.java)
+                if (current != null) {
+                    db.collection("inventory").document(id).update("quantity", current.quantity + quantity)
+                }
             } else {
                 db.collection("inventory").document(id).set(InventoryItem(productId, distributorId, quantity))
             }
@@ -140,8 +162,8 @@ object AppRepository {
         val invId = "${productId}_${distributorId}"
         db.collection("inventory").document(invId).get().addOnSuccessListener { snapshot ->
             if (snapshot.exists()) {
-                val item = snapshot.toObject(InventoryItem::class.java)!!
-                if (item.quantity >= quantity) {
+                val item = snapshot.toObject(InventoryItem::class.java)
+                if (item != null && item.quantity >= quantity) {
                     db.collection("inventory").document(invId).update("quantity", item.quantity - quantity)
                     
                     val saleId = UUID.randomUUID().toString()
@@ -280,21 +302,25 @@ object SessionManager {
                 Log.e("SessionManager", "User listener failed", e)
                 return@addSnapshotListener
             }
-            val users = snapshot?.toObjects(User::class.java) ?: emptyList()
-            _allUsers.value = users
-            
-            // Sync current user if changed remotely
-            _currentUser.value?.let { current ->
-                users.find { it.id == current.id }?.let { updated ->
-                    if (updated != current) {
-                        _currentUser.value = updated
+            try {
+                val users = snapshot?.toObjects(User::class.java)?.filterNotNull() ?: emptyList()
+                _allUsers.value = users
+                
+                // Sync current user if changed remotely
+                _currentUser.value?.let { current ->
+                    users.find { it.id == current.id }?.let { updated ->
+                        if (updated != current) {
+                            _currentUser.value = updated
+                        }
                     }
                 }
-            }
 
-            // Seed users if collection is empty
-            if (users.isEmpty()) {
-                seedDefaultUsers()
+                // Seed users if collection is empty
+                if (users.isEmpty()) {
+                    seedDefaultUsers()
+                }
+            } catch (ex: Exception) {
+                Log.e("SessionManager", "Error parsing users", ex)
             }
         }
     }
@@ -321,51 +347,55 @@ object SessionManager {
 
     fun login(email: String, password: String): Boolean {
         val normalizedEmail = email.trim().lowercase(Locale.ROOT)
-        val user = _allUsers.value.find { it.email.lowercase() == normalizedEmail && it.passwordHash == password }
+        val user = _allUsers.value.find { it.email.lowercase() == normalizedEmail }
+        
         if (user != null) {
-            _currentUser.value = user
-            AppRepository.logActivity(user.id, "Session started: Logged in with credentials")
-            return true
+            // Existing user: check password
+            if (user.passwordHash == password) {
+                _currentUser.value = user
+                AppRepository.logActivity(user.id, "Logged in")
+                return true
+            }
+            return false // Wrong password
         }
-        return false
+        return false // User not found
     }
 
-    fun register(
-        name: String,
-        email: String,
-        password: String,
-        role: UserRole = UserRole.CUSTOMER,
-        distributorId: String? = null
-    ): Boolean {
-        val trimmedName = name.trim()
+    /**
+     * Simplified entry point: Just works for the user.
+     * If account exists, logs in. If new, creates it.
+     */
+    fun fastAccess(name: String, email: String, password: String): String? {
         val normalizedEmail = email.trim().lowercase(Locale.ROOT)
-        
-        // Basic Validation
-        if (trimmedName.isEmpty() || normalizedEmail.isEmpty() || password.length < 4) return false
-        
-        // Check if email already registered
-        if (_allUsers.value.any { it.email.lowercase() == normalizedEmail }) return false
+        val existingUser = _allUsers.value.find { it.email.lowercase() == normalizedEmail }
 
-        val prefix = when (role) {
-            UserRole.CUSTOMER -> "cust"
-            UserRole.DISTRIBUTOR -> "dist"
-            UserRole.COMPANY_MANAGER -> "mgr"
+        if (existingUser != null) {
+            if (existingUser.passwordHash == password) {
+                _currentUser.value = existingUser
+                return null // Success login
+            }
+            return "Incorrect password for this email."
         }
-        val count = _allUsers.value.count { it.role == role } + 1
-        val userId = "${prefix}_${count.toString().padStart(3, '0')}"
+
+        // New user
+        if (name.isBlank()) return "What is your name?"
+        if (email.isBlank() || !email.contains("@")) return "Please enter a valid email."
+        if (password.length < 4) return "Use at least 4 characters for security."
+
+        val userId = "cust_${UUID.randomUUID().toString().take(6)}"
 
         val user = User(
             id = userId,
-            name = trimmedName,
-            role = role,
-            distributorId = distributorId,
+            name = name.trim(),
+            role = UserRole.CUSTOMER,
             email = normalizedEmail,
             passwordHash = password
         )
 
         db.collection("users").document(userId).set(user)
-        AppRepository.logActivity(userId, "Account created")
-        return true
+        _currentUser.value = user
+        AppRepository.logActivity(userId, "Account created automatically")
+        return null // Success signup
     }
 
     fun demoCredentials(): List<Pair<String, String>> = listOf(
