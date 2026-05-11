@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.gms.google.services)
+}
+
+val keystoreProperties = Properties().apply {
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localPropsFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -22,9 +31,28 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = keystoreProperties.getProperty("RELEASE_STORE_FILE")
+                ?: error("Missing RELEASE_STORE_FILE in local.properties")
+            val storePassword = keystoreProperties.getProperty("RELEASE_STORE_PASSWORD")
+                ?: error("Missing RELEASE_STORE_PASSWORD in local.properties")
+            val keyAlias = keystoreProperties.getProperty("RELEASE_KEY_ALIAS")
+                ?: error("Missing RELEASE_KEY_ALIAS in local.properties")
+            val keyPassword = keystoreProperties.getProperty("RELEASE_KEY_PASSWORD")
+                ?: error("Missing RELEASE_KEY_PASSWORD in local.properties")
+
+            storeFile = rootProject.file(storeFilePath)
+            this.storePassword = storePassword
+            this.keyAlias = keyAlias
+            this.keyPassword = keyPassword
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
