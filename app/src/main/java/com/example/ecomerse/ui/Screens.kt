@@ -561,8 +561,11 @@ fun DistributorInventoryScreen() {
     val sales by AppRepository.sales.collectAsState()
     val requests by AppRepository.goodsRequests.collectAsState()
 
-    // Ensure distributor has a valid ID - default to "dist1" if missing
-    val distId = user?.distributorId ?: "dist1"
+    // Hub switcher state - allow distributor to switch between hubs
+    var selectedHub by rememberSaveable { mutableStateOf("dist1") }
+
+    // Use selected hub instead of fixed user distributor ID
+    val distId = selectedHub
 
     val distInventory = remember(inventory, distId) {
         inventory.filter { it.distributorId == distId && it.productId.isNotBlank() }
@@ -662,6 +665,8 @@ fun DistributorInventoryScreen() {
                 DistributorBottomTab.INVENTORY -> DistributorInventoryTabContent(
                     modifier = contentModifier,
                     distributorId = distId,
+                    selectedHub = distId,
+                    onHubChange = { selectedHub = it },
                     inventoryCount = distInventory.size,
                     totalUnits = totalUnits,
                     weeklyUnits = weeklyUnits,
@@ -792,7 +797,7 @@ private fun CustomerHomeTabContent(
     val openCreditBalance = remember(customerRequests) {
         try {
             customerRequests
-                .filter { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED }
+                .filter { it.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && (it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED || it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED) }
                 .sumOf { it.totalAmount }
         } catch (e: Exception) {
             0.0
@@ -828,7 +833,7 @@ private fun CustomerHomeTabContent(
     }
 
     fun sumForPeriod(method: com.example.ecomerse.model.PaymentMethod, period: String): Double {
-        val relevant = customerRequests.filter { (it.paymentMethod == method) && (it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED || it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED) }
+        val relevant = customerRequests.filter { (it.paymentMethod == method) && (it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED || it.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED || it.status == com.example.ecomerse.model.GoodsRequestStatus.SETTLED) }
         return relevant.filter { req ->
             when (period) {
                 "day" -> isSameDay(req.requestedAt, now)
@@ -847,29 +852,49 @@ private fun CustomerHomeTabContent(
     val creditWeek = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CREDIT, "week")
     val creditMonth = sumForPeriod(com.example.ecomerse.model.PaymentMethod.CREDIT, "month")
 
+    // Fallback products in case Firestore hasn't loaded yet
+    val fallbackProducts = listOf(
+        com.example.ecomerse.model.Product("1", "Rice", "High-quality long-grain rice, 25kg per bag", 84375.0, "bag (25kg)"),
+        com.example.ecomerse.model.Product("2", "Cooking Oil", "Pure vegetable cooking oil, 5L per jerrican", 32800.0, "jerrican (5L)"),
+        com.example.ecomerse.model.Product("3", "Sugar", "Granulated sugar, 50kg per bag", 142500.0, "bag (50kg)"),
+        com.example.ecomerse.model.Product("4", "Laundry Detergent", "Powerful cleaning powder, 1kg per pack", 13125.0, "pack (1kg)"),
+        com.example.ecomerse.model.Product("5", "Bar Soap", "Premium bath soap, box of 72 bars", 53400.0, "box (72 bars)"),
+        com.example.ecomerse.model.Product("6", "Toothpaste", "Fluoride toothpaste, box of 12 tubes", 63700.0, "box (12 tubes)"),
+        com.example.ecomerse.model.Product("7", "Toilet Paper", "Soft tissue rolls, pack of 10", 22500.0, "pack (10 rolls)"),
+        com.example.ecomerse.model.Product("8", "Bottled Water", "Purified drinking water, crate of 24 bottles", 16875.0, "crate (24 bottles)"),
+        com.example.ecomerse.model.Product("9", "Diapers", "Infant/toddler diapers, pack of 50", 69375.0, "pack (50)")
+    )
+
+    // Use actual products if available, otherwise use fallback
+    val effectiveProducts = if (products.isNotEmpty()) products else fallbackProducts
+
     val distinctDistributors = inventory.map { it.distributorId }.distinct()
-    
-    var selectedProductId by rememberSaveable { mutableStateOf(products.firstOrNull()?.id.orEmpty()) }
-    var selectedDistributorId by rememberSaveable { mutableStateOf(distinctDistributors.firstOrNull().orEmpty()) }
+    // Fallback distributors
+    val fallbackDistributors = listOf("dist1", "dist2")
+    val effectiveDistributors = if (distinctDistributors.isNotEmpty()) distinctDistributors else fallbackDistributors
+
+    var selectedProductId by rememberSaveable { mutableStateOf(effectiveProducts.firstOrNull()?.id.orEmpty()) }
+    var selectedDistributorId by rememberSaveable { mutableStateOf(effectiveDistributors.firstOrNull().orEmpty()) }
     var quantityText by rememberSaveable { mutableStateOf("1") }
     var note by rememberSaveable { mutableStateOf("") }
     var paymentMethod by remember { mutableStateOf(com.example.ecomerse.model.PaymentMethod.CASH) }
     var submitMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(products, distinctDistributors) {
+    LaunchedEffect(effectiveProducts, effectiveDistributors) {
         if (selectedProductId.isBlank()) {
-            selectedProductId = products.firstOrNull()?.id.orEmpty()
+            selectedProductId = effectiveProducts.firstOrNull()?.id.orEmpty()
         }
         if (selectedDistributorId.isBlank()) {
-            selectedDistributorId = distinctDistributors.firstOrNull().orEmpty()
+            selectedDistributorId = effectiveDistributors.firstOrNull().orEmpty()
         }
     }
 
-    val selectedProduct = products.find { it.id == selectedProductId }
+    val selectedProduct = effectiveProducts.find { it.id == selectedProductId }
     val eligibleDistributors = if (selectedProductId.isNotBlank()) {
         inventory.filter { it.productId == selectedProductId }.map { it.distributorId }.distinct()
+            .takeIf { it.isNotEmpty() } ?: effectiveDistributors
     } else {
-        distinctDistributors
+        effectiveDistributors
     }
 
     LaunchedEffect(selectedProductId, eligibleDistributors) {
@@ -972,7 +997,7 @@ private fun CustomerHomeTabContent(
 
                     SelectionDropdown(
                         title = "Product",
-                        options = products.map { it.id to "${it.name} (${it.unit})" },
+                        options = effectiveProducts.map { it.id to "${it.name} (${it.unit})" },
                         selectedId = selectedProductId,
                         onSelect = { selectedProductId = it }
                     )
@@ -1076,8 +1101,11 @@ private fun CustomerRequestsTabContent(
     val customerRequests = remember(requests, user) { 
         requests.filter { it.customerId == user?.id } 
     }
-    val pendingRequests = remember(customerRequests) { 
-        customerRequests.count { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING || it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED } 
+    val pendingOnlyRequests = remember(customerRequests) {
+        customerRequests.filter { it.status == com.example.ecomerse.model.GoodsRequestStatus.PENDING }
+    }
+    val approvedRequests = remember(customerRequests) {
+        customerRequests.filter { it.status == com.example.ecomerse.model.GoodsRequestStatus.APPROVED }
     }
     val totalSpend = remember(customerRequests) { 
         customerRequests.sumOf { it.totalAmount } 
@@ -1096,7 +1124,12 @@ private fun CustomerRequestsTabContent(
                 Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Request Activity", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
-                        text = "Pending review: $pendingRequests",
+                        text = "Pending review: ${pendingOnlyRequests.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Approved: ${approvedRequests.size}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1108,85 +1141,159 @@ private fun CustomerRequestsTabContent(
 
                     if (customerRequests.isEmpty()) {
                         Text("Your request history will appear here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        customerRequests.sortedByDescending { it.requestedAt }.forEach { request ->
-                            val productName = products.find { it.id == request.productId }?.name ?: request.productId
-                            val productUnit = products.find { it.id == request.productId }?.unit ?: "unit"
-                            val statusColor = when (request.status) {
-                                com.example.ecomerse.model.GoodsRequestStatus.PENDING -> MaterialTheme.colorScheme.tertiary
-                                com.example.ecomerse.model.GoodsRequestStatus.APPROVED -> MaterialTheme.colorScheme.primary
-                                com.example.ecomerse.model.GoodsRequestStatus.FULFILLED -> Color(0xFF6A1B9A)
-                                com.example.ecomerse.model.GoodsRequestStatus.SETTLED -> Color(0xFF2E7D32)
-                                com.example.ecomerse.model.GoodsRequestStatus.REJECTED -> MaterialTheme.colorScheme.error
-                            }
-
-                            ElevatedCard(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(productName, style = MaterialTheme.typography.titleMedium)
-                                            Text(
-                                                text = "${request.quantity} x ${productUnit} • ${displayDistributorName(request.distributorId)}",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                style = MaterialTheme.typography.bodySmall
-                                            )
-                                        }
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Surface(color = statusColor.copy(alpha = 0.14f), shape = RoundedCornerShape(50)) {
-                                                Text(
-                                                    text = request.status.name.replace("_", " "),
-                                                    color = statusColor,
-                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                                    style = MaterialTheme.typography.labelSmall
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(50)) {
-                                                Text(
-                                                    text = request.paymentMethod.name,
-                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                                    style = MaterialTheme.typography.labelSmall
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Text(
-                                        text = "Amount: UGX ${String.format(Locale.getDefault(), "%.0f", request.totalAmount)}",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-
-                                    request.note.takeIf { it.isNotBlank() }?.let {
-                                        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                                    }
-
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(request.requestedAt)),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-
-                                        if (request.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && request.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED) {
-                                            TextButton(onClick = { AppRepository.settleCreditRequest(request.id, user?.id.orEmpty()) }) {
-                                                Text("Settle now")
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
         }
-    }
-}
+
+         if (pendingOnlyRequests.isNotEmpty()) {
+             item {
+                 Text("Pending Review", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+             }
+             items(pendingOnlyRequests.sortedByDescending { it.requestedAt }) { request ->
+                 val productName = products.find { it.id == request.productId }?.name ?: request.productId
+                 val productUnit = products.find { it.id == request.productId }?.unit ?: "unit"
+                 val statusColor = when (request.status) {
+                     com.example.ecomerse.model.GoodsRequestStatus.PENDING -> MaterialTheme.colorScheme.tertiary
+                     com.example.ecomerse.model.GoodsRequestStatus.APPROVED -> MaterialTheme.colorScheme.primary
+                     com.example.ecomerse.model.GoodsRequestStatus.FULFILLED -> Color(0xFF6A1B9A)
+                     com.example.ecomerse.model.GoodsRequestStatus.SETTLED -> Color(0xFF2E7D32)
+                     com.example.ecomerse.model.GoodsRequestStatus.REJECTED -> MaterialTheme.colorScheme.error
+                 }
+
+                 ElevatedCard(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                             Column(modifier = Modifier.weight(1f)) {
+                                 Text(productName, style = MaterialTheme.typography.titleMedium)
+                                 Text(
+                                     text = "${request.quantity} x ${productUnit} • ${displayDistributorName(request.distributorId)}",
+                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                     style = MaterialTheme.typography.bodySmall
+                                 )
+                             }
+                             Column(horizontalAlignment = Alignment.End) {
+                                 Surface(color = statusColor.copy(alpha = 0.14f), shape = RoundedCornerShape(50)) {
+                                     Text(
+                                         text = request.status.name.replace("_", " "),
+                                         color = statusColor,
+                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                         style = MaterialTheme.typography.labelSmall
+                                     )
+                                 }
+                                 Spacer(modifier = Modifier.height(4.dp))
+                                 Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(50)) {
+                                     Text(
+                                         text = request.paymentMethod.name,
+                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                         style = MaterialTheme.typography.labelSmall
+                                     )
+                                 }
+                             }
+                         }
+
+                         Text(
+                             text = "Amount: UGX ${String.format(Locale.getDefault(), "%.0f", request.totalAmount)}",
+                             style = MaterialTheme.typography.bodyMedium
+                         )
+
+                         request.note.takeIf { it.isNotBlank() }?.let {
+                             Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                         }
+
+                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                             Text(
+                                 text = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(request.requestedAt)),
+                                 style = MaterialTheme.typography.labelSmall,
+                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                             )
+                         }
+                     }
+                 }
+             }
+         }
+
+         if (approvedRequests.isNotEmpty()) {
+             item {
+                 Text("Approved by Distributor", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+             }
+             items(approvedRequests.sortedByDescending { it.requestedAt }) { request ->
+                 val productName = products.find { it.id == request.productId }?.name ?: request.productId
+                 val productUnit = products.find { it.id == request.productId }?.unit ?: "unit"
+                 val statusColor = when (request.status) {
+                     com.example.ecomerse.model.GoodsRequestStatus.PENDING -> MaterialTheme.colorScheme.tertiary
+                     com.example.ecomerse.model.GoodsRequestStatus.APPROVED -> MaterialTheme.colorScheme.primary
+                     com.example.ecomerse.model.GoodsRequestStatus.FULFILLED -> Color(0xFF6A1B9A)
+                     com.example.ecomerse.model.GoodsRequestStatus.SETTLED -> Color(0xFF2E7D32)
+                     com.example.ecomerse.model.GoodsRequestStatus.REJECTED -> MaterialTheme.colorScheme.error
+                 }
+
+                 ElevatedCard(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                             Column(modifier = Modifier.weight(1f)) {
+                                 Text(productName, style = MaterialTheme.typography.titleMedium)
+                                 Text(
+                                     text = "${request.quantity} x ${productUnit} • ${displayDistributorName(request.distributorId)}",
+                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                     style = MaterialTheme.typography.bodySmall
+                                 )
+                             }
+                             Column(horizontalAlignment = Alignment.End) {
+                                 Surface(color = statusColor.copy(alpha = 0.14f), shape = RoundedCornerShape(50)) {
+                                     Text(
+                                         text = request.status.name.replace("_", " "),
+                                         color = statusColor,
+                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                         style = MaterialTheme.typography.labelSmall
+                                     )
+                                 }
+                                 Spacer(modifier = Modifier.height(4.dp))
+                                 Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(50)) {
+                                     Text(
+                                         text = request.paymentMethod.name,
+                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                         style = MaterialTheme.typography.labelSmall
+                                     )
+                                 }
+                             }
+                         }
+
+                         Text(
+                             text = "Amount: UGX ${String.format(Locale.getDefault(), "%.0f", request.totalAmount)}",
+                             style = MaterialTheme.typography.bodyMedium
+                         )
+
+                         request.note.takeIf { it.isNotBlank() }?.let {
+                             Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                         }
+
+                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                             Text(
+                                 text = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(request.requestedAt)),
+                                 style = MaterialTheme.typography.labelSmall,
+                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                             )
+
+                             if (request.paymentMethod == com.example.ecomerse.model.PaymentMethod.CREDIT && request.status == com.example.ecomerse.model.GoodsRequestStatus.FULFILLED) {
+                                 TextButton(onClick = { AppRepository.settleCreditRequest(request.id, user?.id.orEmpty()) }) {
+                                     Text("Settle now")
+                                 }
+                             }
+                         }
+                     }
+                 }
+             }
+         }
+     }
+ }
 
 @Composable
 private fun DistributorInventoryTabContent(
     modifier: Modifier = Modifier,
     distributorId: String?,
+    selectedHub: String = "dist1",
+    onHubChange: (String) -> Unit = {},
     inventoryCount: Int,
     totalUnits: Int,
     weeklyUnits: Int,
@@ -1208,11 +1315,37 @@ private fun DistributorInventoryTabContent(
     ) {
         item {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Inventory Hub", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Distributor: ${distributorId ?: "N/A"}", style = MaterialTheme.typography.headlineSmall)
+                    Text(when (selectedHub) {
+                        "dist1" -> "North Hub"
+                        "dist2" -> "Metro Hub"
+                        else -> "Distributor: ${distributorId ?: "N/A"}"
+                    }, style = MaterialTheme.typography.headlineSmall)
                     Text("Live stock visibility and quick actions", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                    // Hub Switcher
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { onHubChange("dist1") },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selectedHub == "dist1") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Text("North Hub")
+                        }
+                        Button(
+                            onClick = { onHubChange("dist2") },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selectedHub == "dist2") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Text("Metro Hub")
+                        }
+                    }
                 }
             }
         }
@@ -1671,27 +1804,34 @@ private fun SelectionDropdown(
     onSelect: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val hasOptions = options.isNotEmpty()
     val selectedLabel = options.firstOrNull { it.first == selectedId }?.second ?: "Choose one"
 
-    // Use ExposedDropdownMenuBox to properly anchor the dropdown to the text field
+    LaunchedEffect(options) {
+        if (!hasOptions) expanded = false
+    }
+
     ExposedDropdownMenuBox(
         expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
+        onExpandedChange = { isExpanded ->
+            if (hasOptions) expanded = isExpanded
+        }
     ) {
         OutlinedTextField(
             value = selectedLabel,
             onValueChange = {},
             modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .menuAnchor(),
             label = { Text(title) },
+            enabled = hasOptions,
             readOnly = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             singleLine = true
         )
 
         ExposedDropdownMenu(
-            expanded = expanded,
+            expanded = expanded && hasOptions,
             onDismissRequest = { expanded = false }
         ) {
             options.forEach { (id, label) ->

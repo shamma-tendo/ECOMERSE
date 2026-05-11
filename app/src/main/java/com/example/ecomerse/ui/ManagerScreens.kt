@@ -191,12 +191,32 @@ fun DistributorSalesPerformanceScreen(state: ManagerUiState) {
                                 Text("UGX ${revenueStr}", style = MaterialTheme.typography.titleLarge, color = Color(0xFF4CAF50))
                             }
                         }
-                        
-                        if (report.lastSaleTime != null) {
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Customer Orders", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MetricChip(label = "Placed", value = report.totalRequestCount.toString(), modifier = Modifier.weight(1f))
+                            MetricChip(label = "Pending", value = report.pendingRequestCount.toString(), modifier = Modifier.weight(1f))
+                            MetricChip(label = "Approved", value = report.approvedRequestCount.toString(), modifier = Modifier.weight(1f))
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MetricChip(label = "Fulfilled", value = report.fulfilledRequestCount.toString(), modifier = Modifier.weight(1f))
+                            MetricChip(label = "Settled", value = report.settledRequestCount.toString(), modifier = Modifier.weight(1f))
+                            MetricChip(label = "Units", value = report.totalRequestedUnits.toString(), modifier = Modifier.weight(1f))
+                        }
+
+                        if (report.lastSaleTime != null || report.lastRequestTime != null) {
                             Spacer(modifier = Modifier.height(8.dp))
-                            val dateStr = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(report.lastSaleTime))
+                            val saleText = report.lastSaleTime?.let {
+                                "Last Sale: ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(it))}"
+                            }
+                            val requestText = report.lastRequestTime?.let {
+                                "Last Order: ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(it))}"
+                            }
                             Text(
-                                text = "Last Sale: $dateStr",
+                                text = listOfNotNull(saleText, requestText).joinToString(" • "),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -204,6 +224,20 @@ fun DistributorSalesPerformanceScreen(state: ManagerUiState) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MetricChip(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(value, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -307,13 +341,6 @@ fun UserRoleCard(user: User, onRoleChange: (UserRole) -> Unit, onDistributorIdCh
                                         }
                                     )
                                 }
-                                DropdownMenuItem(
-                                    text = { Text("None") },
-                                    onClick = {
-                                        onDistributorIdChange(null)
-                                        hubExpanded = false
-                                    }
-                                )
                             }
                         }
                     }

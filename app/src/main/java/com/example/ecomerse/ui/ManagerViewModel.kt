@@ -22,7 +22,14 @@ data class DistributorSalesReport(
     val distributorName: String,
     val totalSalesCount: Int,
     val totalRevenue: Double,
-    val lastSaleTime: Long?
+    val lastSaleTime: Long?,
+    val totalRequestCount: Int = 0,
+    val pendingRequestCount: Int = 0,
+    val approvedRequestCount: Int = 0,
+    val fulfilledRequestCount: Int = 0,
+    val settledRequestCount: Int = 0,
+    val totalRequestedUnits: Int = 0,
+    val lastRequestTime: Long? = null
 )
 
 class ManagerViewModel : ViewModel() {
@@ -39,29 +46,41 @@ class ManagerViewModel : ViewModel() {
     }
 
     private fun observeSalesData() {
-        AppRepository.sales.combine(AppRepository.products) { sales, products ->
-            sales
-                .groupBy { it.distributorId }
-                .map { (distributorId, distributorSales) ->
-                    val revenue = distributorSales.sumOf { sale ->
-                        val product = products.find { it.id == sale.productId }
-                        (product?.unitPrice ?: 0.0) * sale.quantity
-                    }
+        combine(AppRepository.sales, AppRepository.goodsRequests, AppRepository.products) { sales, requests, products ->
+            val distributorIds = (sales.map { it.distributorId } + requests.map { it.distributorId })
+                .filter { it.isNotBlank() }
+                .distinct()
 
-                    val distributorName = when (distributorId) {
-                        "dist1" -> "North Hub"
-                        "dist2" -> "Metro Hub"
-                        else -> distributorId
-                    }
+            distributorIds.map { distributorId ->
+                val distributorSales = sales.filter { it.distributorId == distributorId }
+                val distributorRequests = requests.filter { it.distributorId == distributorId }
 
-                    DistributorSalesReport(
-                        distributorId = distributorId,
-                        distributorName = distributorName,
-                        totalSalesCount = distributorSales.sumOf { it.quantity },
-                        totalRevenue = revenue,
-                        lastSaleTime = distributorSales.maxByOrNull { it.timestamp }?.timestamp
-                    )
+                val revenue = distributorSales.sumOf { sale ->
+                    val product = products.find { it.id == sale.productId }
+                    (product?.unitPrice ?: 0.0) * sale.quantity
                 }
+
+                val distributorName = when (distributorId) {
+                    "dist1" -> "North Hub"
+                    "dist2" -> "Metro Hub"
+                    else -> distributorId
+                }
+
+                DistributorSalesReport(
+                    distributorId = distributorId,
+                    distributorName = distributorName,
+                    totalSalesCount = distributorSales.sumOf { it.quantity },
+                    totalRevenue = revenue,
+                    lastSaleTime = distributorSales.maxByOrNull { it.timestamp }?.timestamp,
+                    totalRequestCount = distributorRequests.size,
+                    pendingRequestCount = distributorRequests.count { it.status == GoodsRequestStatus.PENDING },
+                    approvedRequestCount = distributorRequests.count { it.status == GoodsRequestStatus.APPROVED },
+                    fulfilledRequestCount = distributorRequests.count { it.status == GoodsRequestStatus.FULFILLED },
+                    settledRequestCount = distributorRequests.count { it.status == GoodsRequestStatus.SETTLED },
+                    totalRequestedUnits = distributorRequests.sumOf { it.quantity },
+                    lastRequestTime = distributorRequests.maxByOrNull { it.requestedAt }?.requestedAt
+                )
+            }
         }.onEach { reports ->
             _uiState.update { it.copy(salesReports = reports) }
         }.launchIn(viewModelScope)

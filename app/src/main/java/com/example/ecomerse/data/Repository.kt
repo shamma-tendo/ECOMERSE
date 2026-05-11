@@ -85,46 +85,48 @@ object AppRepository {
     }
 
     private fun seedInitialDataIfEmpty() {
-        db.collection("products").get().addOnSuccessListener { snapshot ->
-            if (snapshot.isEmpty) {
-                val initialProducts = listOf(
-                    Product("1", "Rice", "High-quality long-grain rice, 25kg per bag", 84375.0, "bag (25kg)"),
-                    Product("2", "Cooking Oil", "Pure vegetable cooking oil, 5L per jerrican", 32800.0, "jerrican (5L)"),
-                    Product("3", "Sugar", "Granulated sugar, 50kg per bag", 142500.0, "bag (50kg)"),
-                    Product("4", "Laundry Detergent", "Powerful cleaning powder, 1kg per pack", 13125.0, "pack (1kg)"),
-                    Product("5", "Bar Soap", "Premium bath soap, box of 72 bars", 53400.0, "box (72 bars)"),
-                    Product("6", "Toothpaste", "Fluoride toothpaste, box of 12 tubes", 63700.0, "box (12 tubes)"),
-                    Product("7", "Toilet Paper", "Soft tissue rolls, pack of 10", 22500.0, "pack (10 rolls)"),
-                    Product("8", "Bottled Water", "Purified drinking water, crate of 24 bottles", 16875.0, "crate (24 bottles)"),
-                    Product("9", "Diapers", "Infant/toddler diapers, pack of 50", 69375.0, "pack (50)")
-                )
-                initialProducts.forEach { db.collection("products").document(it.id).set(it) }
-                
-                val initialInventory = listOf(
-                    InventoryItem("1", "dist1", 150),
-                    InventoryItem("2", "dist1", 85),
-                    InventoryItem("3", "dist1", 60),
-                    InventoryItem("4", "dist1", 200),
-                    InventoryItem("5", "dist1", 120),
-                    InventoryItem("6", "dist1", 95),
-                    InventoryItem("7", "dist1", 180),
-                    InventoryItem("8", "dist1", 250),
-                    InventoryItem("9", "dist1", 140),
-                    InventoryItem("1", "dist2", 120),
-                    InventoryItem("2", "dist2", 90),
-                    InventoryItem("3", "dist2", 75),
-                    InventoryItem("4", "dist2", 220),
-                    InventoryItem("5", "dist2", 110),
-                    InventoryItem("6", "dist2", 105),
-                    InventoryItem("7", "dist2", 200),
-                    InventoryItem("8", "dist2", 280),
-                    InventoryItem("9", "dist2", 160)
-                )
-                initialInventory.forEach { 
-                    val id = "${it.productId}_${it.distributorId}"
-                    db.collection("inventory").document(id).set(it) 
+        db.collection("products").get().addOnSuccessListener { productSnapshot ->
+            val productIds = if (productSnapshot.isEmpty) {
+                defaultProducts().also { products ->
+                    products.forEach { db.collection("products").document(it.id).set(it) }
+                }.map { it.id }
+            } else {
+                productSnapshot.toObjects(Product::class.java)
+                    .map { it.id }
+                    .filter { it.isNotBlank() }
+            }
+
+            db.collection("inventory").get().addOnSuccessListener { inventorySnapshot ->
+                if (inventorySnapshot.isEmpty && productIds.isNotEmpty()) {
+                    defaultInventory(productIds).forEach {
+                        val id = "${it.productId}_${it.distributorId}"
+                        db.collection("inventory").document(id).set(it)
+                    }
                 }
             }
+        }
+    }
+
+    private fun defaultProducts(): List<Product> = listOf(
+        Product("1", "Rice", "High-quality long-grain rice, 25kg per bag", 84375.0, "bag (25kg)"),
+        Product("2", "Cooking Oil", "Pure vegetable cooking oil, 5L per jerrican", 32800.0, "jerrican (5L)"),
+        Product("3", "Sugar", "Granulated sugar, 50kg per bag", 142500.0, "bag (50kg)"),
+        Product("4", "Laundry Detergent", "Powerful cleaning powder, 1kg per pack", 13125.0, "pack (1kg)"),
+        Product("5", "Bar Soap", "Premium bath soap, box of 72 bars", 53400.0, "box (72 bars)"),
+        Product("6", "Toothpaste", "Fluoride toothpaste, box of 12 tubes", 63700.0, "box (12 tubes)"),
+        Product("7", "Toilet Paper", "Soft tissue rolls, pack of 10", 22500.0, "pack (10 rolls)"),
+        Product("8", "Bottled Water", "Purified drinking water, crate of 24 bottles", 16875.0, "crate (24 bottles)"),
+        Product("9", "Diapers", "Infant/toddler diapers, pack of 50", 69375.0, "pack (50)")
+    )
+
+    private fun defaultInventory(productIds: List<String>): List<InventoryItem> {
+        val seedLevels = listOf(150, 85, 60, 200, 120, 95, 180, 250, 140)
+        return productIds.flatMapIndexed { index, productId ->
+            val base = seedLevels[index % seedLevels.size]
+            listOf(
+                InventoryItem(productId, "dist1", base),
+                InventoryItem(productId, "dist2", (base * 0.8).toInt().coerceAtLeast(20))
+            )
         }
     }
 
@@ -199,7 +201,9 @@ object AppRepository {
     ): Boolean {
         if (quantity <= 0) return false
 
-        val product = _products.value.find { it.id == productId } ?: return false
+        val product = _products.value.find { it.id == productId }
+            ?: defaultProducts().find { it.id == productId }
+            ?: return false
         val now = System.currentTimeMillis()
         val requestId = UUID.randomUUID().toString()
         val request = GoodsRequest(
@@ -217,18 +221,35 @@ object AppRepository {
             note = note.trim()
         )
 
+        _goodsRequests.update { current ->
+            (listOf(request) + current)
+                .distinctBy { it.id }
+                .sortedByDescending { it.requestedAt }
+        }
         db.collection("goodsRequests").document(requestId).set(request)
         logActivity(customerId, "Submitted ${paymentMethod.name.lowercase(Locale.ROOT)} request for $quantity x ${product.name}")
         return true
     }
 
+    private fun updateRequestLocally(
+        requestId: String,
+        transform: (GoodsRequest) -> GoodsRequest
+    ) {
+        _goodsRequests.update { current ->
+            current.map { request -> if (request.id == requestId) transform(request) else request }
+                .sortedByDescending { it.requestedAt }
+        }
+    }
+
     fun approveGoodsRequest(requestId: String, userId: String): Boolean {
+        updateRequestLocally(requestId) { it.copy(status = GoodsRequestStatus.APPROVED) }
         db.collection("goodsRequests").document(requestId).update("status", GoodsRequestStatus.APPROVED)
         logActivity(userId, "Approved goods request $requestId")
         return true
     }
 
     fun rejectGoodsRequest(requestId: String, userId: String): Boolean {
+        updateRequestLocally(requestId) { it.copy(status = GoodsRequestStatus.REJECTED) }
         db.collection("goodsRequests").document(requestId).update("status", GoodsRequestStatus.REJECTED)
         logActivity(userId, "Rejected goods request $requestId")
         return true
@@ -251,6 +272,14 @@ object AppRepository {
             if (saleRecorded) {
                 val now = System.currentTimeMillis()
                 val newStatus = if (request.paymentMethod == PaymentMethod.CASH) GoodsRequestStatus.SETTLED else GoodsRequestStatus.FULFILLED
+                updateRequestLocally(requestId) {
+                    it.copy(
+                        status = newStatus,
+                        fulfilledAt = now,
+                        settledAt = if (request.paymentMethod == PaymentMethod.CASH) now else it.settledAt,
+                        handledByUserId = handledByUserId
+                    )
+                }
                 db.collection("goodsRequests").document(requestId).update(
                     "status", newStatus,
                     "fulfilledAt", now,
@@ -264,6 +293,12 @@ object AppRepository {
     }
 
     fun settleCreditRequest(requestId: String, userId: String): Boolean {
+        updateRequestLocally(requestId) {
+            it.copy(
+                status = GoodsRequestStatus.SETTLED,
+                settledAt = System.currentTimeMillis()
+            )
+        }
         db.collection("goodsRequests").document(requestId).update(
             "status", GoodsRequestStatus.SETTLED,
             "settledAt", System.currentTimeMillis()
@@ -331,6 +366,12 @@ object SessionManager {
             User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER, email = "manager@ecomerse.com", passwordHash = "pass1234")
         )
         defaultUsers.forEach { db.collection("users").document(it.id).set(it) }
+        _allUsers.value = (_allUsers.value + defaultUsers).distinctBy { it.id }
+    }
+
+    private fun upsertLocalUser(user: User) {
+        _allUsers.value = (_allUsers.value.filterNot { it.id == user.id } + user)
+            .sortedBy { it.email.lowercase(Locale.ROOT) }
     }
 
     fun login(role: UserRole) {
@@ -339,6 +380,7 @@ object SessionManager {
             UserRole.DISTRIBUTOR -> User("dist_admin_1", "Global Logistics", UserRole.DISTRIBUTOR, "dist1", email = "distributor@ecomerse.com", passwordHash = "pass1234")
             UserRole.COMPANY_MANAGER -> User("mgr_carol", "Carol White", UserRole.COMPANY_MANAGER, email = "manager@ecomerse.com", passwordHash = "pass1234")
         }
+        upsertLocalUser(user)
         _currentUser.value = user
         db.collection("users").document(user.id).set(user)
         AppRepository.logActivity(user.id, "Session started: Logged in as ${role.name}")
@@ -349,7 +391,7 @@ object SessionManager {
         val user = _allUsers.value.find { it.email.lowercase() == normalizedEmail }
         
         if (user != null) {
-            // Existing user: check password
+            // Existing user in cache: check password
             if (user.passwordHash == password) {
                 // Ensure distributor users have a distributorId
                 val updatedUser = if (user.role == UserRole.DISTRIBUTOR && user.distributorId == null) {
@@ -357,13 +399,39 @@ object SessionManager {
                 } else {
                     user
                 }
+                upsertLocalUser(updatedUser)
                 _currentUser.value = updatedUser
                 AppRepository.logActivity(user.id, "Logged in")
                 return true
             }
             return false // Wrong password
         }
-        return false // User not found
+        
+        // User not in cache - try Firestore directly
+        var foundUser: User? = null
+        var success = false
+        val semaphore = java.util.concurrent.Semaphore(0)
+        
+        db.collection("users").whereEqualTo("email", normalizedEmail).limit(1).get()
+            .addOnSuccessListener { snapshot ->
+                foundUser = snapshot.toObjects(User::class.java).firstOrNull()
+                if (foundUser != null && foundUser!!.passwordHash == password) {
+                    upsertLocalUser(foundUser!!)
+                    _currentUser.value = foundUser
+                    AppRepository.logActivity(foundUser!!.id, "Logged in")
+                    success = true
+                }
+                semaphore.release()
+            }
+            .addOnFailureListener { semaphore.release() }
+        
+        try {
+            semaphore.tryAcquire(5, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            Log.e("SessionManager", "Login semaphore interrupted", e)
+        }
+        
+        return success
     }
 
     /**
@@ -377,6 +445,7 @@ object SessionManager {
         if (existingUser != null) {
             if (existingUser.passwordHash == password) {
                 _currentUser.value = existingUser
+                AppRepository.logActivity(existingUser.id, "Logged in")
                 return null // Success login
             }
             return "Incorrect password for this email."
@@ -399,8 +468,9 @@ object SessionManager {
         )
 
         db.collection("users").document(userId).set(user)
+        upsertLocalUser(user)
         _currentUser.value = user
-        AppRepository.logActivity(userId, "Account created automatically")
+        AppRepository.logActivity(userId, "Account created")
         return null // Success signup
     }
 
